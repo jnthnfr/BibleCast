@@ -1,0 +1,17 @@
+{
+  "name": "biblecast",
+  "version": "1.0.0",
+  "description": "Scripture broadcasting software for presenting and projecting Bible verses in church",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "build": "electron-builder",
+    "build:portable": "electron-builder --win portable"
+  },
+  "keywords": ["bible", "church", "projection", "scripture", "electron"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
