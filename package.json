@@ -4,8 +4,8 @@
   "description": "Scripture broadcasting software for presenting and projecting Bible verses in church",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "NODE_ENV=development electron .",
+    "start": "node scripts/launch.js",
+    "dev": "cross-env NODE_ENV=development node scripts/launch.js",
     "seed": "node scripts/seed-db.js",
     "download": "node scripts/download-translations.js",
     "download:kjv": "node scripts/download-translations.js kjv",
@@ -22,12 +22,12 @@
   ],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "better-sqlite3": "^12.9.0"
   },
   "devDependencies": {
-    "electron": "^41.2.0",
+    "cross-env": "^10.1.0",
+    "electron": "^32.3.3",
     "electron-builder": "^26.8.1",
     "electron-rebuild": "^3.2.9"
   }
