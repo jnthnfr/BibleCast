@@ -1,0 +1,35 @@
+{
+  "appId": "com.biblecast.app",
+  "productName": "BibleCast",
+  "copyright": "Copyright © 2025",
+  "directories": {
+    "output": "dist"
+  },
+  "files": [
+    "main.js",
+    "preload.js",
+    "src/**/*",
+    "assets/**/*",
+    "node_modules/**/*",
+    "!node_modules/.cache",
+    "!**/*.md",
+    "!dist/**/*"
+  ],
+  "win": {
+    "target": [
+      { "target": "nsis", "arch": ["x64"] }
+    ],
+    "icon": "assets/icons/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "perMachine": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "BibleCast"
+  },
+  "extraMetadata": {
+    "main": "main.js"
+  }
+}

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BibleCast — Operator</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <header>
+    <h1>&#9654; BibleCast</h1>
+    <div class="session-info">
+      Session: <span id="session-name">None</span>
+      &nbsp;&nbsp;
+      <span class="status-dot" id="display-status-dot"></span>
+      <span id="display-status-text">Display off</span>
+    </div>
+  </header>
+
+  <div class="main-layout">
+
+    <!-- Left panel: search + push controls -->
+    <div class="left-panel">
+      <div class="search-section">
+        <h2>Verse Search</h2>
+        <div class="search-row">
+          <input
+            type="text"
+            id="search-input"
+            placeholder="John 3:16 or keyword..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <select id="translation-select" title="Translation"></select>
+        </div>
+        <div class="search-hint">Type a reference (John 3:16) or keyword to search</div>
+      </div>
+
+      <div class="results-section" id="results-list">
+        <div class="no-results">Search for a verse above</div>
+      </div>
+
+      <div class="display-controls">
+        <div class="push-row">
+          <button class="btn btn-primary" id="push-btn" disabled>
+            &#9658; Push to Display
+          </button>
+        </div>
+        <button class="btn btn-secondary" id="blank-btn">
+          Blank Display
+        </button>
+      </div>
+    </div>
+
+    <!-- Right panel: preview + tabs -->
+    <div class="right-panel">
+      <div class="preview-section">
+        <h2>Display Preview</h2>
+        <div class="verse-preview" id="verse-preview">
+          <div class="preview-empty">No verse on display</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active" data-tab="session">Session</div>
+        <div class="tab" data-tab="history">History</div>
+        <div class="tab" data-tab="settings">Settings</div>
+      </div>
+
+      <!-- Session tab -->
+      <div class="tab-content active" id="tab-session">
+        <div class="session-form">
+          <input type="text" id="session-name-input" placeholder="New session name (e.g. Sunday Morning)" />
+          <button class="btn btn-primary" id="new-session-btn">Start</button>
+        </div>
+        <ul class="session-list" id="session-list"></ul>
+      </div>
+
+      <!-- History tab -->
+      <div class="tab-content" id="tab-history">
+        <div id="history-list">
+          <div class="no-results">No verses logged yet in this session</div>
+        </div>
+      </div>
+
+      <!-- Settings tab -->
+      <div class="tab-content" id="tab-settings">
+        <div class="settings-group">
+          <label>Display Font Size</label>
+          <input type="number" id="setting-font-size" min="24" max="120" value="48" />
+        </div>
+        <div class="settings-group">
+          <label>Display Theme</label>
+          <select id="setting-theme">
+            <option value="dark">Dark (Black background)</option>
+            <option value="light">Light (White background)</option>
+            <option value="blue">Royal Blue</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="save-settings-btn">Save Settings</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
