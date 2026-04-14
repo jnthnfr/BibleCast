@@ -16,6 +16,9 @@ async function init() {
   await loadSettings();
   bindEvents();
   setInterval(syncDisplayState, 5000);
+
+  // Load available list in background — only needed when Settings tab is opened
+  loadAvailableTranslations();
 }
 
 // --- Translations ---
@@ -28,8 +31,9 @@ async function loadTranslations() {
   if (!translations.length) {
     const opt = document.createElement('option');
     opt.value = '';
-    opt.textContent = 'No translations';
+    opt.textContent = 'No translations — load one in Settings';
     select.appendChild(opt);
+    refreshTranslationsList([]);
     return;
   }
 
@@ -39,6 +43,124 @@ async function loadTranslations() {
     opt.textContent = t.abbreviation;
     select.appendChild(opt);
   });
+
+  refreshTranslationsList(translations);
+}
+
+function refreshTranslationsList(translations) {
+  const el = document.getElementById('translations-list');
+  if (!el) return;
+  if (!translations.length) {
+    el.textContent = 'No translations loaded yet.';
+    return;
+  }
+  el.innerHTML = translations.map(t =>
+    `<span style="display:inline-block;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;margin:2px 4px 2px 0">${escapeHtml(t.abbreviation)} — ${escapeHtml(t.name)}</span>`
+  ).join('');
+}
+
+// --- Available translations download panel ---
+
+let availableTranslations = [];
+let installedAbbrs = new Set();
+
+async function loadAvailableTranslations() {
+  availableTranslations = await api.listAvailableTranslations();
+  const installed = await api.listTranslations();
+  installedAbbrs = new Set(installed.map(t => t.abbreviation.toLowerCase()));
+  renderAvailableList();
+}
+
+function renderAvailableList() {
+  const el = document.getElementById('available-translations-list');
+  if (!el) return;
+
+  if (!availableTranslations.length) {
+    el.textContent = 'None available.';
+    return;
+  }
+
+  // Group by language
+  const byLang = {};
+  for (const t of availableTranslations) {
+    if (!byLang[t.language]) byLang[t.language] = [];
+    byLang[t.language].push(t);
+  }
+
+  let html = '';
+  for (const [lang, list] of Object.entries(byLang)) {
+    html += `<div style="margin-bottom:12px">`;
+    html += `<div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px">${escapeHtml(lang)}</div>`;
+    for (const t of list) {
+      const installed = installedAbbrs.has(t.abbr.toLowerCase());
+      html += `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)" data-abbr="${t.abbr}">
+          <div>
+            <span style="font-weight:600;font-size:0.85rem">${escapeHtml(t.name)}</span>
+            <span style="font-size:0.75rem;color:var(--text-muted);margin-left:8px">${escapeHtml(t.abbr.toUpperCase())}</span>
+          </div>
+          <button
+            class="btn btn-secondary dl-btn"
+            style="padding:4px 12px;font-size:0.78rem;min-width:90px"
+            data-abbr="${t.abbr}"
+            ${installed ? 'disabled' : ''}
+          >${installed ? '&#10003; Installed' : '&#8595; Download'}</button>
+        </div>`;
+    }
+    html += `</div>`;
+  }
+
+  el.innerHTML = html;
+
+  el.querySelectorAll('.dl-btn:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => downloadTranslation(btn.dataset.abbr, btn));
+  });
+}
+
+async function downloadTranslation(abbr, btn) {
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Downloading…';
+  }
+  setImportStatus(`Downloading ${abbr.toUpperCase()}… (this may take a moment)`, 'var(--text-muted)');
+
+  const result = await api.downloadTranslation(abbr);
+
+  if (result.ok) {
+    setImportStatus(
+      `Downloaded "${result.name}" — ${result.count.toLocaleString()} verses.`,
+      'var(--success)'
+    );
+    installedAbbrs.add(abbr.toLowerCase());
+    if (btn) { btn.textContent = '✓ Installed'; }
+    await loadTranslations();
+  } else {
+    setImportStatus(`Download failed: ${result.error}`, '#e57373');
+    if (btn) { btn.disabled = false; btn.textContent = '↓ Download'; }
+  }
+}
+
+async function importTranslationFile() {
+  setImportStatus('Opening file picker…', 'var(--text-muted)');
+  const result = await api.importTranslationFile();
+  if (result.canceled) {
+    setImportStatus('', '');
+    return;
+  }
+  if (result.ok) {
+    setImportStatus(`Imported "${result.name}" — ${result.count.toLocaleString()} verses.`, 'var(--success)');
+    await loadTranslations();
+    await loadAvailableTranslations();
+  } else {
+    setImportStatus('Import failed: ' + result.error, '#e57373');
+  }
+}
+
+function setImportStatus(msg, color) {
+  const el = document.getElementById('import-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = color;
 }
 
 // --- Search ---
@@ -290,6 +412,7 @@ function bindEvents() {
     if (e.key === 'Enter') createSession();
   });
   document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
+  document.getElementById('import-translation-btn').addEventListener('click', importTranslationFile);
 
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -310,6 +433,9 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+// Listen for main process nav event (first-run dialog "Open Settings")
+api.onNavSettings(() => switchTab('settings'));
 
 // Start
 document.addEventListener('DOMContentLoaded', init);

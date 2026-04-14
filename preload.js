@@ -29,6 +29,18 @@ contextBridge.exposeInMainWorld('biblecast', {
   listTranslations: () =>
     ipcRenderer.invoke('translations:list'),
 
+  seedSampleTranslation: () =>
+    ipcRenderer.invoke('translations:seed-sample'),
+
+  importTranslationFile: () =>
+    ipcRenderer.invoke('translations:import-file'),
+
+  listAvailableTranslations: () =>
+    ipcRenderer.invoke('translations:available'),
+
+  downloadTranslation: (abbr) =>
+    ipcRenderer.invoke('translations:download', abbr),
+
   // --- Settings ---
   getSettings: () =>
     ipcRenderer.invoke('settings:get'),
@@ -43,6 +55,9 @@ contextBridge.exposeInMainWorld('biblecast', {
   // --- Events from main → renderer ---
   onDisplayUpdate: (callback) =>
     ipcRenderer.on('display:update', (_event, data) => callback(data)),
+
+  onNavSettings: (callback) =>
+    ipcRenderer.on('nav:settings', () => callback()),
 
   removeDisplayUpdate: () =>
     ipcRenderer.removeAllListeners('display:update'),
