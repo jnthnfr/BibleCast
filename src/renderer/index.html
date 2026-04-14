@@ -100,7 +100,37 @@
             <option value="blue">Royal Blue</option>
           </select>
         </div>
-        <button class="btn btn-primary" id="save-settings-btn">Save Settings</button>
+        <button class="btn btn-primary" id="save-settings-btn" style="margin-bottom:24px">Save Settings</button>
+
+        <hr style="border-color:var(--border);margin-bottom:20px" />
+
+        <div class="settings-group">
+          <label>Installed Translations</label>
+          <div id="translations-list" style="margin-bottom:10px;font-size:0.82rem;color:var(--text-muted)">
+            Loading…
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <label>Download Free Translations</label>
+          <div id="available-translations-list" style="margin-bottom:10px">
+            Loading…
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px">
+            All downloadable translations are public domain or freely licensed.
+            Requires an internet connection.
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <label>Import Custom Translation</label>
+          <button class="btn btn-secondary" id="import-translation-btn">Import JSON File…</button>
+          <div style="margin-top:6px;font-size:0.72rem;color:var(--text-muted)">
+            JSON format: [{"book":"John","chapter":3,"verse":16,"text":"…"}]
+          </div>
+        </div>
+
+        <div id="import-status" style="margin-top:10px;font-size:0.82rem"></div>
       </div>
     </div>
 

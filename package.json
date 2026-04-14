@@ -6,6 +6,9 @@
   "scripts": {
     "start": "electron .",
     "dev": "NODE_ENV=development electron .",
+    "seed": "node scripts/seed-db.js",
+    "download": "node scripts/download-translations.js",
+    "download:kjv": "node scripts/download-translations.js kjv",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "build": "electron-builder",
     "build:portable": "electron-builder --win portable"
