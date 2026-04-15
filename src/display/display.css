@@ -1,14 +1,16 @@
 :root {
-  --bg-dark: #000000;
-  --bg-light: #ffffff;
-  --bg-blue: #0a1628;
-  --text-dark: #ffffff;
-  --text-light: #111111;
-  --text-blue: #e8d5a3;
-  --accent-dark: #e8c97a;
-  --accent-light: #8b1a1a;
-  --accent-blue: #e8c97a;
-  --font-size: 56px;
+  --font-size:   56px;
+  --text-color:  #ffffff;
+  --transition:  0.5s;
+
+  /* Theme backgrounds */
+  --bg-dark:    #000000;
+  --bg-light:   #ffffff;
+  --bg-blue:    #0a1628;
+
+  /* Theme text defaults (overridden per theme) */
+  --ref-color:  #e8c97a;
+  --badge-color: rgba(255,255,255,0.45);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -21,36 +23,33 @@ html, body {
 
 body {
   background: var(--bg-dark);
-  color: var(--text-dark);
+  color: var(--text-color);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: 'Georgia', 'Times New Roman', serif;
-  transition: background 0.4s ease;
+  transition: background var(--transition) ease, color var(--transition) ease;
 }
 
-/* Theme variants */
+/* ── Theme variants ── */
 body.theme-light {
   background: var(--bg-light);
-  color: var(--text-light);
+  --ref-color:   #8b1a1a;
+  --badge-color: #888;
 }
-
-body.theme-light .verse-reference { color: var(--accent-light); }
-body.theme-light .translation-badge { color: #888; }
 
 body.theme-blue {
   background: var(--bg-blue);
-  color: var(--text-blue);
+  --ref-color:   #e8c97a;
+  --badge-color: rgba(232,197,163,0.55);
 }
 
-body.theme-blue .verse-reference { color: var(--accent-blue); }
-
-/* --- Verse container --- */
+/* ── Verse container ── */
 .verse-container {
   max-width: 85%;
   text-align: center;
   padding: 60px 80px;
-  animation: fadeIn 0.5s ease;
+  animation: fadeIn var(--transition) ease;
 }
 
 @keyframes fadeIn {
@@ -61,18 +60,21 @@ body.theme-blue .verse-reference { color: var(--accent-blue); }
 .verse-reference {
   font-size: calc(var(--font-size) * 0.45);
   font-weight: 700;
-  color: var(--accent-dark);
+  color: var(--ref-color);
   letter-spacing: 2px;
   margin-bottom: 28px;
   font-family: 'Segoe UI', system-ui, sans-serif;
   text-transform: uppercase;
+  transition: color var(--transition) ease;
 }
 
 .verse-text {
   font-size: var(--font-size);
   line-height: 1.55;
   font-style: italic;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  color: var(--text-color);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  transition: font-size var(--transition) ease, color var(--transition) ease;
 }
 
 .verse-text::before { content: '\201C'; }
@@ -81,13 +83,14 @@ body.theme-blue .verse-reference { color: var(--accent-blue); }
 .translation-badge {
   margin-top: 24px;
   font-size: calc(var(--font-size) * 0.28);
-  color: rgba(255,255,255,0.45);
+  color: var(--badge-color);
   font-style: normal;
   font-family: 'Segoe UI', system-ui, sans-serif;
   letter-spacing: 1px;
+  transition: color var(--transition) ease;
 }
 
-/* --- Blank state --- */
+/* ── Blank / hidden state ── */
 .blank-screen {
   display: none;
   width: 100%;
@@ -98,13 +101,13 @@ body.theme-blue .verse-reference { color: var(--accent-blue); }
   z-index: 100;
 }
 
-body.blanked .blank-screen { display: block; }
+body.blanked .blank-screen  { display: block; }
 body.blanked .verse-container { visibility: hidden; }
 
-/* --- Idle state --- */
+/* ── Idle (no verse yet) ── */
 .idle-message {
   font-size: 1.2rem;
-  color: rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.12);
   font-family: 'Segoe UI', system-ui, sans-serif;
   letter-spacing: 3px;
   font-style: normal;
