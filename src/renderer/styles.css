@@ -426,7 +426,7 @@ html, body {
 
 .transcript-text {
   font-size: 0.78rem;
-  color: var(--text-muted);
+  color: var(--text);
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
@@ -506,11 +506,12 @@ html, body {
 
 /* ── Live Output panel ───────────────────────────── */
 .output-panel {
-  width: 320px;
-  min-width: 260px;
+  flex: 1;
+  min-width: 220px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
+  overflow: hidden;
 }
 
 .live-badge {
@@ -1406,3 +1407,30 @@ input[type=number]:focus,
 /* ── Misc ────────────────────────────────────────── */
 select { cursor: pointer; }
 button { cursor: pointer; }
+
+/* ── Search autocomplete dropdown ───────────────── */
+.search-autocomplete {
+  display: none;
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 36px; /* leave room for Find button */
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  z-index: 200;
+  overflow: hidden;
+}
+.autocomplete-item {
+  padding: 7px 11px;
+  font-size: 0.82rem;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.autocomplete-item:hover {
+  background: var(--surface3);
+  color: var(--accent);
+}
+

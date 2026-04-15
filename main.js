@@ -92,9 +92,11 @@ function parseXmlBible(xmlStr) {
   return verses;
 }
 
-let operatorWindow = null;
-let displayWindow  = null;
-let ndiWindow      = null;
+let operatorWindow   = null;
+let displayWindow    = null;
+let ndiWindow        = null;
+let gpuWorkerWindow  = null;
+let pendingGpuResolve = null;
 let db = null;
 
 function getDb() {
@@ -179,6 +181,20 @@ function createNdiWindow() {
   ndiWindow.on('closed', () => { ndiWindow = null; });
 }
 
+function createGpuWorkerWindow() {
+  gpuWorkerWindow = new BrowserWindow({
+    show: false,
+    width: 1,
+    height: 1,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+  gpuWorkerWindow.loadFile('src/whisper/whisper-gpu.html');
+  gpuWorkerWindow.on('closed', () => { gpuWorkerWindow = null; });
+}
+
 // --- App lifecycle ---
 
 app.whenReady().then(() => {
@@ -217,9 +233,11 @@ app.whenReady().then(() => {
   });
 });
 
-// Closing the operator window tears down everything and quits
+// Closing the operator window tears down all output windows and quits
 app.on('window-all-closed', () => {
-  if (displayWindow) { displayWindow.destroy(); displayWindow = null; }
+  if (displayWindow)   { displayWindow.destroy();   displayWindow  = null; }
+  if (ndiWindow)       { ndiWindow.destroy();        ndiWindow      = null; }
+  if (gpuWorkerWindow) { gpuWorkerWindow.destroy();  gpuWorkerWindow = null; }
   getDb().closeDb();
   app.quit();
 });
@@ -683,6 +701,15 @@ function registerIpcHandlers() {
       const { pipeline, env } = await import('@xenova/transformers');
       // Cache models next to app userData so they survive app restarts
       env.cacheDir = path.join(app.getPath('userData'), 'whisper-models');
+
+      // Apply CPU thread count from settings
+      const os = require('os');
+      const threadsSetting = getDb().getSetting('whisper_threads') || 'auto';
+      env.backends.onnx.wasm.numThreads =
+        threadsSetting === 'auto'
+          ? Math.max(2, Math.floor(os.cpus().length / 2))
+          : parseInt(threadsSetting, 10);
+
       whisperPipeline = await pipeline('automatic-speech-recognition', modelId || 'Xenova/whisper-base.en', {
         progress_callback: progress => progressCb && progressCb(progress),
       });
@@ -692,27 +719,69 @@ function registerIpcHandlers() {
     }
   }
 
+  // GPU worker IPC — results/progress forwarded from the hidden GPU window
+  ipcMain.on('whisper:gpu:result', (_e, result) => {
+    if (pendingGpuResolve) { pendingGpuResolve(result); pendingGpuResolve = null; }
+  });
+  ipcMain.on('whisper:gpu:progress', (_e, p) => {
+    operatorWindow?.webContents.send('whisper:progress', p);
+  });
+
+  // Open/close GPU worker window
+  ipcMain.handle('whisper:set-gpu', (_e, enable) => {
+    if (enable && !gpuWorkerWindow) createGpuWorkerWindow();
+    if (!enable && gpuWorkerWindow) { gpuWorkerWindow.destroy(); gpuWorkerWindow = null; }
+    return { ok: true };
+  });
+
   ipcMain.handle('whisper:transcribe', async (_event, { audioArray, modelId }) => {
+    // Route to GPU worker window when GPU acceleration is enabled
+    const useGpu = getDb().getSetting('whisper_gpu') === 'true';
+    if (useGpu && gpuWorkerWindow) {
+      const cacheDir = path.join(app.getPath('userData'), 'whisper-models');
+      return new Promise(resolve => {
+        pendingGpuResolve = resolve;
+        gpuWorkerWindow.webContents.send('whisper:gpu:transcribe', { audioArray, modelId, cacheDir });
+        setTimeout(() => {
+          if (pendingGpuResolve) {
+            pendingGpuResolve({ ok: false, error: 'GPU timeout — falling back to CPU' });
+            pendingGpuResolve = null;
+          }
+        }, 30000);
+      });
+    }
+
+    // CPU path
     try {
-      const pipe   = await getWhisperPipeline(modelId, progress => {
+      const pipe    = await getWhisperPipeline(modelId, progress => {
         operatorWindow?.webContents.send('whisper:progress', progress);
       });
       const float32 = new Float32Array(audioArray);
-      // No chunk_length_s for short clips — let Whisper auto-size for speed
-      const result  = await pipe(float32, {
-        language: 'english',
-        task:     'transcribe',
-      });
+      const result  = await pipe(float32, { language: 'english', task: 'transcribe' });
       return { ok: true, text: result.text || '' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
   });
 
-  // Reset the cached pipeline (called when user changes model size)
+  // Reset the cached pipeline (called when user changes model size or thread count)
   ipcMain.handle('whisper:reset', () => {
     whisperPipeline = null;
+    if (gpuWorkerWindow) gpuWorkerWindow.webContents.send('whisper:gpu:reset');
     return { ok: true };
+  });
+
+  // Hardware info for the Settings AI Performance section
+  ipcMain.handle('system:hardware-info', async () => {
+    const os   = require('os');
+    const cpus = os.cpus();
+    const gpuInfo = await app.getGPUInfo('basic').catch(() => ({}));
+    const gpuName = gpuInfo?.gpuDevice?.[0]?.deviceString || 'Unknown GPU';
+    return {
+      cpuModel: cpus[0]?.model || 'Unknown CPU',
+      cpuCores: cpus.length,
+      gpuName,
+    };
   });
 
   // ── AI Sermon Summary (OpenAI GPT) ───────────────────────────────────────────

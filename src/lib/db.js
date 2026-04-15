@@ -119,8 +119,8 @@ function searchVerses({ query, translation = 'KJV', limit = 20 }) {
 
   const verses = JSON.parse(trans.data);
 
-  // Check if query looks like a reference (e.g. "John 3:16")
-  const refMatch = query.match(/^(\d?\s*[a-zA-Z]+)\s+(\d+)(?::(\d+))?/);
+  // Check if query looks like a reference (e.g. "John 3:16" or "John 3 16")
+  const refMatch = query.match(/^(\d?\s*[a-zA-Z]+(?:\s+[a-zA-Z]+)*?)\s+(\d+)(?:[: ](\d+))?/);
   if (refMatch) {
     return searchByReference(verses, refMatch, limit);
   }

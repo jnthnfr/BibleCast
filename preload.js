@@ -95,6 +95,12 @@ contextBridge.exposeInMainWorld('biblecast', {
   resetWhisper: () =>
     ipcRenderer.invoke('whisper:reset'),
 
+  setWhisperGpu: (enable) =>
+    ipcRenderer.invoke('whisper:set-gpu', enable),
+
+  getHardwareInfo: () =>
+    ipcRenderer.invoke('system:hardware-info'),
+
   onWhisperProgress: (callback) =>
     ipcRenderer.on('whisper:progress', (_event, data) => callback(data)),
 

@@ -347,19 +347,15 @@ function initSpeechRecognition() {
         setWhisperBadge('');
         const el = document.getElementById('transcript-text');
         if (!el) return;
-        // For network/service errors, offer a one-click switch to Whisper AI
+        // Network/service errors: auto-switch to Whisper AI silently
         if (['network', 'service-not-allowed'].includes(e.error)) {
-          el.innerHTML = `<span style="color:var(--danger)">⚠ Web Speech unavailable (<strong>${e.error}</strong>) — Google's server is unreachable on this network.
-            <button id="switch-whisper-btn" style="margin-left:8px;padding:2px 10px;font-size:11px;cursor:pointer;border:1px solid var(--accent);border-radius:4px;background:var(--accent);color:#fff">Switch to Whisper AI</button></span>`;
-          document.getElementById('switch-whisper-btn')?.addEventListener('click', () => {
-            settings.whisper_provider = 'whisper-local';
-            api.saveSetting('whisper_provider', 'whisper-local');
-            const sel = document.getElementById('setting-whisper-provider');
-            if (sel) sel.value = 'whisper-local';
-            el.textContent = 'Switched to Whisper AI. Press Start Listening to begin.';
-          });
+          settings.whisper_provider = 'whisper-local';
+          api.saveSetting('whisper_provider', 'whisper-local');
+          const sel = document.getElementById('setting-whisper-provider');
+          if (sel) sel.value = 'whisper-local';
+          el.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Web Speech unavailable (${e.error}) — switched to Whisper AI automatically. Press Start Listening to begin.</span>`;
         } else {
-          el.innerHTML = `<span style="color:var(--danger)">⚠ Speech error: <strong>${e.error}</strong> — check mic permissions or switch to Whisper AI in Settings.</span>`;
+          el.innerHTML = `<span style="color:var(--danger)">⚠ Speech error: <strong>${e.error}</strong> — check mic permissions in Settings.</span>`;
         }
       }
     };
@@ -378,17 +374,21 @@ function initSpeechRecognition() {
   api.onWhisperProgress(progress => {
     const badge = document.getElementById('whisper-status');
     if (!badge) return;
+    const tEl = document.getElementById('transcript-text');
     if (progress.status === 'downloading') {
       const pct = progress.progress != null ? Math.round(progress.progress) + '%' : '';
       badge.textContent = `Downloading model ${pct}`;
       badge.className   = 'whisper-status downloading';
+      if (tEl && !fullTranscript) tEl.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Downloading Whisper AI model ${pct} — transcription will begin shortly…</span>`;
     } else if (progress.status === 'initiate' || progress.status === 'progress') {
       badge.textContent = 'Loading model…';
       badge.className   = 'whisper-status downloading';
+      if (tEl && !fullTranscript) tEl.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Loading Whisper AI model…</span>`;
     } else if (progress.status === 'done') {
       whisperReady = true;
       badge.textContent = 'Whisper ready';
       badge.className   = 'whisper-status ai';
+      if (tEl && !fullTranscript) tEl.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Whisper AI ready — speak and text will appear here.</span>`;
       setTimeout(() => { badge.textContent = 'Whisper AI'; }, 3000);
     }
   });
@@ -527,6 +527,124 @@ function updateTranscriptDisplay(interim) {
 
 // ── Bible prediction from speech ──────────────────────────────────────────────
 
+// All 66 Bible books with common abbreviations (used for autocomplete + voice detection)
+const BIBLE_BOOKS = [
+  { name: 'Genesis',         abbrevs: ['gen'] },
+  { name: 'Exodus',          abbrevs: ['exod','ex'] },
+  { name: 'Leviticus',       abbrevs: ['lev'] },
+  { name: 'Numbers',         abbrevs: ['num'] },
+  { name: 'Deuteronomy',     abbrevs: ['deut','dt'] },
+  { name: 'Joshua',          abbrevs: ['josh'] },
+  { name: 'Judges',          abbrevs: ['judg','jdg'] },
+  { name: 'Ruth',            abbrevs: ['rth'] },
+  { name: '1 Samuel',        abbrevs: ['1sam'] },
+  { name: '2 Samuel',        abbrevs: ['2sam'] },
+  { name: '1 Kings',         abbrevs: ['1kgs'] },
+  { name: '2 Kings',         abbrevs: ['2kgs'] },
+  { name: '1 Chronicles',    abbrevs: ['1chr'] },
+  { name: '2 Chronicles',    abbrevs: ['2chr'] },
+  { name: 'Ezra',            abbrevs: ['ezra'] },
+  { name: 'Nehemiah',        abbrevs: ['neh'] },
+  { name: 'Esther',          abbrevs: ['est'] },
+  { name: 'Job',             abbrevs: ['job'] },
+  { name: 'Psalms',          abbrevs: ['ps','psa'] },
+  { name: 'Proverbs',        abbrevs: ['prov'] },
+  { name: 'Ecclesiastes',    abbrevs: ['eccl'] },
+  { name: 'Song of Solomon', abbrevs: ['song','sos'] },
+  { name: 'Isaiah',          abbrevs: ['isa'] },
+  { name: 'Jeremiah',        abbrevs: ['jer'] },
+  { name: 'Lamentations',    abbrevs: ['lam'] },
+  { name: 'Ezekiel',         abbrevs: ['ezek'] },
+  { name: 'Daniel',          abbrevs: ['dan'] },
+  { name: 'Hosea',           abbrevs: ['hos'] },
+  { name: 'Joel',            abbrevs: ['joel'] },
+  { name: 'Amos',            abbrevs: ['amos'] },
+  { name: 'Obadiah',         abbrevs: ['obad'] },
+  { name: 'Jonah',           abbrevs: ['jon'] },
+  { name: 'Micah',           abbrevs: ['mic'] },
+  { name: 'Nahum',           abbrevs: ['nah'] },
+  { name: 'Habakkuk',        abbrevs: ['hab'] },
+  { name: 'Zephaniah',       abbrevs: ['zeph'] },
+  { name: 'Haggai',          abbrevs: ['hag'] },
+  { name: 'Zechariah',       abbrevs: ['zech'] },
+  { name: 'Malachi',         abbrevs: ['mal'] },
+  { name: 'Matthew',         abbrevs: ['matt','mt'] },
+  { name: 'Mark',            abbrevs: ['mk','mrk'] },
+  { name: 'Luke',            abbrevs: ['lk','luk'] },
+  { name: 'John',            abbrevs: ['jn','jhn'] },
+  { name: 'Acts',            abbrevs: ['acts'] },
+  { name: 'Romans',          abbrevs: ['rom'] },
+  { name: '1 Corinthians',   abbrevs: ['1cor'] },
+  { name: '2 Corinthians',   abbrevs: ['2cor'] },
+  { name: 'Galatians',       abbrevs: ['gal'] },
+  { name: 'Ephesians',       abbrevs: ['eph'] },
+  { name: 'Philippians',     abbrevs: ['phil'] },
+  { name: 'Colossians',      abbrevs: ['col'] },
+  { name: '1 Thessalonians', abbrevs: ['1thess'] },
+  { name: '2 Thessalonians', abbrevs: ['2thess'] },
+  { name: '1 Timothy',       abbrevs: ['1tim'] },
+  { name: '2 Timothy',       abbrevs: ['2tim'] },
+  { name: 'Titus',           abbrevs: ['titus'] },
+  { name: 'Philemon',        abbrevs: ['phlm'] },
+  { name: 'Hebrews',         abbrevs: ['heb'] },
+  { name: 'James',           abbrevs: ['jas','jam'] },
+  { name: '1 Peter',         abbrevs: ['1pet'] },
+  { name: '2 Peter',         abbrevs: ['2pet'] },
+  { name: '1 John',          abbrevs: ['1jn'] },
+  { name: '2 John',          abbrevs: ['2jn'] },
+  { name: '3 John',          abbrevs: ['3jn'] },
+  { name: 'Jude',            abbrevs: ['jude'] },
+  { name: 'Revelation',      abbrevs: ['rev'] },
+];
+
+// Detect a spoken/typed scripture reference — colon optional, space works too
+// e.g. "John 3:16", "John 3 16", "First Corinthians 13 4"
+const SCRIPTURE_REF_RE = /\b(?:(?:first|second|third|1st|2nd|3rd|1|2|3)\s+)?(?:genesis|gen|exodus|exod?|leviticus|lev|numbers|num|deuteronomy|deut|joshua|josh|judges|judg|ruth|(?:first|second|1st?|2nd?)\s*samuel|samuel|sam|(?:first|second|1st?|2nd?)\s*kings|kings|(?:first|second|1st?|2nd?)\s*chronicles|chronicles|chron|ezra|nehemiah|neh|esther|est|job|psalms?|ps|proverbs?|prov|ecclesiastes|eccl|song(?:\s*of\s*solomon)?|isaiah|isa|jeremiah|jer|lamentations|lam|ezekiel|ezek|daniel|dan|hosea|hos|joel|amos|obadiah|jonah|micah|mic|nahum|nah|habakkuk|hab|zephaniah|zeph|haggai|hag|zechariah|zech|malachi|mal|matthew|matt|mark|luke|john|acts|romans|rom|(?:first|second|1st?|2nd?)\s*corinthians|corinthians|cor|galatians|gal|ephesians|eph|philippians|phil|colossians|col|(?:first|second|1st?|2nd?)\s*thessalonians|thessalonians|thess|(?:first|second|1st?|2nd?)\s*timothy|timothy|tim|titus|philemon|phlm|hebrews|heb|james|jas|(?:first|second|1st?|2nd?)\s*peter|peter|pet|(?:first|second|third|1st?|2nd?|3rd?)\s*john|jude|revelation|rev)\s+(\d+)(?:[: ](\d+))?/i;
+
+function detectScriptureRef(text) {
+  const m = text.match(SCRIPTURE_REF_RE);
+  return m ? m[0].trim() : null;
+}
+
+// ── Search autocomplete ───────────────────────────────────────────────────────
+
+function updateBookAutocomplete() {
+  const input    = document.getElementById('search-input');
+  const dropdown = document.getElementById('search-autocomplete');
+  if (!input || !dropdown) return;
+
+  const val = input.value.trim().toLowerCase();
+
+  // Only show book suggestions when no digits typed yet
+  if (!val || /\d/.test(val)) { dropdown.style.display = 'none'; return; }
+
+  const matches = BIBLE_BOOKS.filter(b =>
+    b.name.toLowerCase().startsWith(val) ||
+    b.abbrevs.some(a => a.startsWith(val))
+  ).slice(0, 8);
+
+  // Hide if no matches or the exact book is already typed
+  if (!matches.length || (matches.length === 1 && matches[0].name.toLowerCase() === val)) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  dropdown.innerHTML = matches.map(b =>
+    `<div class="autocomplete-item" data-name="${escapeHtml(b.name)}">${escapeHtml(b.name)}</div>`
+  ).join('');
+  dropdown.style.display = 'block';
+
+  dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+    item.addEventListener('mousedown', e => {
+      e.preventDefault(); // keep input focused
+      input.value = item.dataset.name + ' ';
+      dropdown.style.display = 'none';
+      input.focus();
+      doSearch();
+    });
+  });
+}
+
 const STOP_WORDS = new Set([
   'the','a','an','and','or','but','in','on','at','to','for','of','with','is','are',
   'was','were','be','been','being','have','has','had','do','does','did','will','would',
@@ -558,12 +676,21 @@ function schedulePrediction(text) {
 }
 
 async function runPrediction(text) {
-  const keywords = extractKeywords(text);
-  if (keywords.length < getConfidenceThreshold()) return;
-
   const translation = document.getElementById('translation-select')?.value || 'KJV';
-  const query       = keywords.slice(0, 4).join(' ');
-  const results     = await api.searchVerses(query, translation);
+  let results = [];
+
+  // Try direct reference match first (e.g. "John 3:16" spoken aloud)
+  const ref = detectScriptureRef(text);
+  if (ref) {
+    results = await api.searchVerses(ref, translation);
+  }
+
+  // Fall back to keyword search if no reference found or no results
+  if (!results.length) {
+    const keywords = extractKeywords(text);
+    if (keywords.length < getConfidenceThreshold()) return;
+    results = await api.searchVerses(keywords.slice(0, 4).join(' '), translation);
+  }
 
   showPredictions(results.slice(0, 5));
 
@@ -772,7 +899,6 @@ async function loadAvailableTranslations() {
 }
 
 function renderAvailableList() {
-  renderAvailableInto('available-translations-list');
   renderAvailableInto('settings-available-list');
 }
 
@@ -863,6 +989,7 @@ function setImportStatus(msg, color, id = 'import-status') {
 
 function onSearchInput() {
   clearTimeout(searchTimeout);
+  updateBookAutocomplete();
   searchTimeout = setTimeout(doSearch, 300);
 }
 
@@ -1262,7 +1389,15 @@ async function loadSettingsView() {
   // Transcription & Audio
   setSelectVal('setting-whisper-provider', s.whisper_provider || 'webspeech');
   setSelectVal('setting-whisper-model',    s.whisper_model    || 'Xenova/whisper-base.en');
+  setSelectVal('setting-whisper-threads',  s.whisper_threads  || 'auto');
+  setCheckbox('setting-whisper-gpu',       s.whisper_gpu === 'true');
   setCheckbox('setting-ai-summary',        s.ai_summary === 'true');
+
+  // Populate hardware info
+  api.getHardwareInfo().then(hw => {
+    const el = document.getElementById('hardware-info-text');
+    if (el) el.textContent = `${hw.cpuCores}-core ${hw.cpuModel.split('@')[0].trim()} · ${hw.gpuName}`;
+  }).catch(() => {});
   setInputVal('setting-openai-key',        s.openai_api_key || '');
   // Show/hide model row based on provider
   const modelRow = document.getElementById('whisper-model-row');
@@ -1307,6 +1442,8 @@ async function saveAllSettings() {
   const pairs = [
     ['whisper_provider',        getSelectVal('setting-whisper-provider')],
     ['whisper_model',           getSelectVal('setting-whisper-model')],
+    ['whisper_threads',         getSelectVal('setting-whisper-threads') || 'auto'],
+    ['whisper_gpu',             getCheckbox('setting-whisper-gpu')],
     ['ai_summary',              getCheckbox('setting-ai-summary')],
     ['openai_api_key',          getInputVal('setting-openai-key')],
     ['speech_quality',          getSelectVal('setting-speech-quality')],
@@ -1425,7 +1562,18 @@ function bindEvents() {
   // Search
   document.getElementById('search-input')?.addEventListener('input', onSearchInput);
   document.getElementById('search-input')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') doSearch();
+    if (e.key === 'Escape') {
+      document.getElementById('search-autocomplete').style.display = 'none';
+    } else if (e.key === 'Enter') {
+      document.getElementById('search-autocomplete').style.display = 'none';
+      doSearch();
+    }
+  });
+  document.getElementById('search-input')?.addEventListener('blur', () => {
+    setTimeout(() => {
+      const d = document.getElementById('search-autocomplete');
+      if (d) d.style.display = 'none';
+    }, 150);
   });
   document.getElementById('translation-select')?.addEventListener('change', doSearch);
   document.getElementById('find-btn')?.addEventListener('click', doSearch);
@@ -1608,6 +1756,19 @@ function bindEvents() {
 
   // Whisper model change: reset cached pipeline so new model loads on next use
   document.getElementById('setting-whisper-model')?.addEventListener('change', () => {
+    api.resetWhisper?.();
+    whisperReady = false;
+  });
+
+  // CPU thread change: reset pipeline so it reloads with the new thread count
+  document.getElementById('setting-whisper-threads')?.addEventListener('change', () => {
+    api.resetWhisper?.();
+    whisperReady = false;
+  });
+
+  // GPU toggle: open/close the GPU worker window and reset pipeline
+  document.getElementById('setting-whisper-gpu')?.addEventListener('change', async e => {
+    await api.setWhisperGpu(e.target.checked);
     api.resetWhisper?.();
     whisperReady = false;
   });
