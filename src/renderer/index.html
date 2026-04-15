@@ -464,11 +464,11 @@
             <div class="setting-row">
               <div class="setting-info">
                 <div class="setting-name">Speech engine</div>
-                <div class="setting-desc">Whisper AI runs a local neural network — downloads ~75 MB model on first use, then works fully offline. Web Speech API requires Google's servers and does not work in desktop apps.</div>
+                <div class="setting-desc">Vosk gives real-time word-by-word output (downloads ~45 MB model once, fully offline). Whisper AI is more accurate but transcribes in 2–3 second chunks.</div>
               </div>
               <select id="setting-whisper-provider" class="setting-select">
-                <option value="whisper-local">Whisper AI — local model (offline, accurate)</option>
-                <option value="webspeech">Web Speech API (requires Google servers — unreliable)</option>
+                <option value="vosk">Vosk — real-time, offline (recommended)</option>
+                <option value="whisper-local">Whisper AI — most accurate, offline (slower)</option>
               </select>
             </div>
             <div class="setting-row" id="whisper-model-row">

@@ -31,6 +31,13 @@ let whisperFlushTimer  = null;        // interval to flush buffer every N second
 let whisperReady       = false;       // pipeline loaded flag
 let summaryWordCount   = 0;           // word count at last AI summary trigger
 
+// Vosk (vosk-browser WASM) audio capture state
+let voskModel          = null;
+let voskRec            = null;
+let voskAudioCtx       = null;
+let voskProcessor      = null;
+let voskStream         = null;
+
 // Settings cache (loaded once, kept in sync)
 let settings = {
   auto_project:           false,
@@ -43,7 +50,7 @@ let settings = {
   font_size:              '64',
   show_translation:       true,
   show_reference:         true,
-  whisper_provider:       'whisper-local',
+  whisper_provider:       'vosk',
 };
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
@@ -402,6 +409,8 @@ function toggleListening() {
   if (isListening) {
     if (settings.whisper_provider === 'whisper-local') {
       startWhisperCapture();
+    } else if (settings.whisper_provider === 'vosk') {
+      startVoskCapture();
     } else {
       if (!recognition) { isListening = false; return; }
       try {
@@ -418,6 +427,8 @@ function toggleListening() {
   } else {
     if (settings.whisper_provider === 'whisper-local') {
       stopWhisperCapture();
+    } else if (settings.whisper_provider === 'vosk') {
+      stopVoskCapture();
     } else {
       recognition?.stop();
     }
@@ -479,6 +490,88 @@ function stopWhisperCapture() {
   whisperAudioCtx = null;
   whisperStream?.getTracks().forEach(t => t.stop());
   whisperStream = null;
+}
+
+// ── Vosk (vosk-browser WASM) — real-time offline speech recognition ───────────
+
+function loadVoskLib() {
+  return new Promise((resolve, reject) => {
+    if (window.Vosk) { resolve(window.Vosk); return; }
+    const script = document.createElement('script');
+    script.src = '../../node_modules/vosk-browser/dist/vosk.js';
+    script.onload  = () => resolve(window.Vosk);
+    script.onerror = () => reject(new Error('Could not load vosk.js'));
+    document.head.appendChild(script);
+  });
+}
+
+async function startVoskCapture() {
+  const el  = document.getElementById('transcript-text');
+  const btn = document.getElementById('listen-btn');
+  setWhisperBadge('Loading…', 'downloading');
+  if (el && !fullTranscript) el.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Loading Vosk speech model (first use downloads ~45 MB, cached after that)…</span>`;
+
+  try {
+    const VoskLib = await loadVoskLib();
+
+    if (!voskModel) {
+      voskModel = await VoskLib.createModel(
+        'https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz'
+      );
+    }
+
+    voskRec = new voskModel.KaldiRecognizer(16000);
+
+    voskRec.on('result', msg => {
+      const text = (msg.result?.text || '').trim();
+      if (text) {
+        fullTranscript += (fullTranscript ? ' ' : '') + text;
+        updateTranscriptDisplay('');
+        onNewFinalText(text);
+      }
+    });
+
+    voskRec.on('partialresult', msg => {
+      const partial = (msg.result?.partial || '').trim();
+      if (partial) updateTranscriptDisplay(partial);
+    });
+
+    voskStream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
+    });
+
+    voskAudioCtx  = new AudioContext();
+    const source  = voskAudioCtx.createMediaStreamSource(voskStream);
+    voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
+
+    voskProcessor.onaudioprocess = event => {
+      try { voskRec.acceptWaveform(event.inputBuffer); } catch (_) {}
+    };
+
+    source.connect(voskProcessor);
+    voskProcessor.connect(voskAudioCtx.destination);
+
+    setWhisperBadge('● Listening', 'recording');
+    if (el && !fullTranscript) el.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Vosk ready — speak and text will appear here.</span>`;
+
+  } catch (err) {
+    console.error('[Vosk]', err);
+    isListening = false;
+    if (btn) {
+      btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg> Start Listening`;
+      btn.classList.remove('active');
+    }
+    setWhisperBadge('');
+    if (el) el.innerHTML = `<span style="color:var(--danger)">Vosk error: ${err.message}</span>`;
+  }
+}
+
+function stopVoskCapture() {
+  if (voskProcessor) { voskProcessor.disconnect(); voskProcessor = null; }
+  if (voskAudioCtx)  { voskAudioCtx.close();       voskAudioCtx  = null; }
+  if (voskStream)    { voskStream.getTracks().forEach(t => t.stop()); voskStream = null; }
+  if (voskRec)       { voskRec.remove();            voskRec       = null; }
+  setWhisperBadge('');
 }
 
 async function flushWhisperBuffer() {
@@ -1310,10 +1403,10 @@ async function refreshHistory(sessionId) {
 
 async function loadAllSettings() {
   const s  = await api.getSettings();
-  // Migrate: Web Speech API doesn't work in Electron — force to Whisper AI
+  // Migrate: Web Speech API doesn't work in Electron — move to Vosk
   if (!s.whisper_provider || s.whisper_provider === 'webspeech') {
-    s.whisper_provider = 'whisper-local';
-    api.saveSetting('whisper_provider', 'whisper-local');
+    s.whisper_provider = 'vosk';
+    api.saveSetting('whisper_provider', 'vosk');
   }
   settings = { ...settings, ...s };
 
@@ -1393,7 +1486,7 @@ async function loadSettingsView() {
   const s = await api.getSettings();
 
   // Transcription & Audio
-  setSelectVal('setting-whisper-provider', s.whisper_provider || 'whisper-local');
+  setSelectVal('setting-whisper-provider', s.whisper_provider || 'vosk');
   setSelectVal('setting-whisper-model',    s.whisper_model    || 'Xenova/whisper-base.en');
   setSelectVal('setting-whisper-threads',  s.whisper_threads  || 'auto');
   setCheckbox('setting-whisper-gpu',       s.whisper_gpu === 'true');
