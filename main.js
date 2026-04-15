@@ -205,16 +205,17 @@ app.whenReady().then(() => {
   // Pre-approve background permission checks (Web Speech API checks silently on every use)
   session.defaultSession.setPermissionCheckHandler((_wc, _permission, _origin, _details) => true);
 
-  // Allow Google speech API endpoints so Web Speech works behind strict CSPs
+  // CSP: allow vosk-browser blob Workers, model download, and local assets
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self'; " +
-          "script-src 'self' 'unsafe-inline'; " +
+          "script-src 'self' 'unsafe-inline' blob:; " +
+          "worker-src blob:; " +
           "style-src 'self' 'unsafe-inline'; " +
-          "connect-src 'self' https://www.google.com https://*.googleapis.com wss://*.googleapis.com; " +
+          "connect-src 'self' https://ccoreilly.github.io https://*.githubusercontent.com; " +
           "media-src 'self' blob:; " +
           "img-src 'self' data: blob: file: https:; " +
           "font-src 'self' data:"
