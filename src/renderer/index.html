@@ -464,11 +464,11 @@
             <div class="setting-row">
               <div class="setting-info">
                 <div class="setting-name">Speech engine</div>
-                <div class="setting-desc">Whisper AI runs a local neural network (downloads ~75 MB model on first use, fully offline thereafter). Web Speech API requires no download but is less accurate.</div>
+                <div class="setting-desc">Whisper AI runs a local neural network — downloads ~75 MB model on first use, then works fully offline. Web Speech API requires Google's servers and does not work in desktop apps.</div>
               </div>
               <select id="setting-whisper-provider" class="setting-select">
-                <option value="webspeech">Web Speech API (instant, online)</option>
                 <option value="whisper-local">Whisper AI — local model (offline, accurate)</option>
+                <option value="webspeech">Web Speech API (requires Google servers — unreliable)</option>
               </select>
             </div>
             <div class="setting-row" id="whisper-model-row">

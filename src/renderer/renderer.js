@@ -43,6 +43,7 @@ let settings = {
   font_size:              '64',
   show_translation:       true,
   show_reference:         true,
+  whisper_provider:       'whisper-local',
 };
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
@@ -1309,6 +1310,11 @@ async function refreshHistory(sessionId) {
 
 async function loadAllSettings() {
   const s  = await api.getSettings();
+  // Migrate: Web Speech API doesn't work in Electron — force to Whisper AI
+  if (!s.whisper_provider || s.whisper_provider === 'webspeech') {
+    s.whisper_provider = 'whisper-local';
+    api.saveSetting('whisper_provider', 'whisper-local');
+  }
   settings = { ...settings, ...s };
 
   // Sync auto-project toggle in top bar
@@ -1387,7 +1393,7 @@ async function loadSettingsView() {
   const s = await api.getSettings();
 
   // Transcription & Audio
-  setSelectVal('setting-whisper-provider', s.whisper_provider || 'webspeech');
+  setSelectVal('setting-whisper-provider', s.whisper_provider || 'whisper-local');
   setSelectVal('setting-whisper-model',    s.whisper_model    || 'Xenova/whisper-base.en');
   setSelectVal('setting-whisper-threads',  s.whisper_threads  || 'auto');
   setCheckbox('setting-whisper-gpu',       s.whisper_gpu === 'true');
