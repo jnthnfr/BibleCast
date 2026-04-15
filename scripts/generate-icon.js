@@ -8,7 +8,7 @@
 const fs   = require('fs');
 const path = require('path');
 
-const SIZE   = 32;
+const SIZE   = 256;
 const W      = SIZE;
 const H      = SIZE;
 
