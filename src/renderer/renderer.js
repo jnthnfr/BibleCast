@@ -295,6 +295,8 @@ function initSpeechRecognition() {
     recognition.lang           = 'en-US';
 
     recognition.onresult = event => {
+      // Confirm it's actually working the moment we get any result
+      setWhisperBadge('● Active', 'ai');
       let interimText = '';
       let finalDelta  = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -311,13 +313,30 @@ function initSpeechRecognition() {
     };
 
     recognition.onerror = e => {
-      if (e.error !== 'no-speech' && e.error !== 'aborted')
-        console.warn('[WebSpeech] Error:', e.error);
+      if (e.error === 'no-speech' || e.error === 'aborted') return;
+      console.warn('[WebSpeech] Error:', e.error);
+      // Persistent errors — reset state and inform the user visibly
+      const PERSISTENT = ['not-allowed', 'audio-capture', 'service-not-allowed', 'network'];
+      if (PERSISTENT.includes(e.error)) {
+        isListening = false;
+        const btn = document.getElementById('listen-btn');
+        if (btn) {
+          btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg> Start Listening`;
+          btn.classList.remove('active');
+        }
+        setWhisperBadge('');
+        const el = document.getElementById('transcript-text');
+        if (el) el.innerHTML = `<span style="color:var(--danger)">⚠ Speech error: <strong>${e.error}</strong> — check mic permissions or switch to Whisper AI in Settings.</span>`;
+      }
     };
 
     recognition.onend = () => {
-      if (isListening && settings.whisper_provider !== 'whisper-local')
-        try { recognition.start(); } catch (_) {}
+      // Delay restart so onerror (which fires before onend) has time to set isListening=false
+      if (isListening && settings.whisper_provider !== 'whisper-local') {
+        setTimeout(() => {
+          if (isListening) try { recognition.start(); } catch (_) {}
+        }, 300);
+      }
     };
   }
 
@@ -352,6 +371,7 @@ function toggleListening() {
       if (!recognition) { isListening = false; return; }
       try {
         recognition.start();
+        setWhisperBadge('● Listening', 'recording');
       } catch (e) {
         isListening = false;
         console.error('[WebSpeech] Could not start:', e.message);

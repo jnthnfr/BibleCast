@@ -154,10 +154,12 @@ function createDisplayWindow() {
 // --- App lifecycle ---
 
 app.whenReady().then(() => {
-  // Allow microphone access for Web Speech API
+  // Allow microphone / speech access for Web Speech API
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
-    cb(permission === 'media' || permission === 'microphone');
+    cb(['media', 'microphone', 'speech'].includes(permission));
   });
+  // Pre-approve background permission checks (Web Speech API checks silently on every use)
+  session.defaultSession.setPermissionCheckHandler((_wc, _permission, _origin, _details) => true);
 
   createOperatorWindow();
   // Display window is NOT created on launch — toggled via Outputs tab
@@ -174,6 +176,11 @@ app.on('window-all-closed', () => {
   if (displayWindow) { displayWindow.destroy(); displayWindow = null; }
   getDb().closeDb();
   app.quit();
+});
+
+// Force-exit after a short grace period so ONNX/worker threads don't keep the process alive
+app.on('before-quit', () => {
+  setTimeout(() => process.exit(0), 300);
 });
 
 // --- First-run: silently seed KJV from bundled file ---
