@@ -104,6 +104,38 @@ body.theme-blue {
 body.blanked .blank-screen  { display: block; }
 body.blanked .verse-container { visibility: hidden; }
 
+/* ── Lower-third layout ── */
+body.layout-lower-third {
+  align-items: flex-end;
+}
+body.layout-lower-third .verse-container {
+  width: 100%;
+  max-width: 100%;
+  padding: 24px 80px 48px;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  text-align: left;
+  border-top: 3px solid rgba(255, 255, 255, 0.15);
+  animation: slideUp var(--transition) ease;
+}
+body.layout-lower-third .verse-text {
+  font-size: calc(var(--font-size) * 0.62);
+}
+body.layout-lower-third .verse-reference {
+  font-size: calc(var(--font-size) * 0.28);
+  margin-bottom: 10px;
+}
+body.layout-lower-third .translation-badge {
+  font-size: calc(var(--font-size) * 0.22);
+  margin-top: 10px;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ── Idle (no verse yet) ── */
 .idle-message {
   font-size: 1.2rem;

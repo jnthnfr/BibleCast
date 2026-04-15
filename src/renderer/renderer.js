@@ -146,10 +146,30 @@ function initSegButtons() {
       btn.addEventListener('click', () => {
         group.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        // Show/hide standby URL row
-        if (group.id === 'standby-bg-type' || group.id === 'rs-bg-type') {
-          const row = document.getElementById('bg-image-row') || document.getElementById('standby-bg-url-row');
-          if (row) row.style.display = btn.dataset.val === 'image' ? 'flex' : 'none';
+        const val = btn.dataset.val;
+
+        // Show/hide background sub-rows
+        if (group.id === 'rs-bg-type') {
+          const solidRow = document.getElementById('bg-solid-row');
+          const gradRow  = document.getElementById('bg-gradient-row');
+          const imgRow   = document.getElementById('bg-image-row');
+          if (solidRow) solidRow.style.display = val === 'solid'    ? 'flex'  : 'none';
+          if (gradRow)  gradRow.style.display  = val === 'gradient' ? 'block' : 'none';
+          if (imgRow)   imgRow.style.display   = val === 'image'    ? 'block' : 'none';
+        }
+        if (group.id === 'standby-bg-type') {
+          const row = document.getElementById('standby-bg-url-row');
+          if (row) row.style.display = val === 'image' ? 'flex' : 'none';
+        }
+
+        // HDMI layout — save + send to display window
+        if (group.id === 'hdmi-layout') {
+          api.sendDisplayLayout({ target: 'hdmi', layout: val });
+        }
+
+        // NDI layout — save + send to NDI window
+        if (group.id === 'ndi-layout') {
+          api.sendDisplayLayout({ target: 'ndi', layout: val });
         }
       });
     });
@@ -326,7 +346,21 @@ function initSpeechRecognition() {
         }
         setWhisperBadge('');
         const el = document.getElementById('transcript-text');
-        if (el) el.innerHTML = `<span style="color:var(--danger)">⚠ Speech error: <strong>${e.error}</strong> — check mic permissions or switch to Whisper AI in Settings.</span>`;
+        if (!el) return;
+        // For network/service errors, offer a one-click switch to Whisper AI
+        if (['network', 'service-not-allowed'].includes(e.error)) {
+          el.innerHTML = `<span style="color:var(--danger)">⚠ Web Speech unavailable (<strong>${e.error}</strong>) — Google's server is unreachable on this network.
+            <button id="switch-whisper-btn" style="margin-left:8px;padding:2px 10px;font-size:11px;cursor:pointer;border:1px solid var(--accent);border-radius:4px;background:var(--accent);color:#fff">Switch to Whisper AI</button></span>`;
+          document.getElementById('switch-whisper-btn')?.addEventListener('click', () => {
+            settings.whisper_provider = 'whisper-local';
+            api.saveSetting('whisper_provider', 'whisper-local');
+            const sel = document.getElementById('setting-whisper-provider');
+            if (sel) sel.value = 'whisper-local';
+            el.textContent = 'Switched to Whisper AI. Press Start Listening to begin.';
+          });
+        } else {
+          el.innerHTML = `<span style="color:var(--danger)">⚠ Speech error: <strong>${e.error}</strong> — check mic permissions or switch to Whisper AI in Settings.</span>`;
+        }
       }
     };
 
@@ -418,8 +452,8 @@ async function startWhisperCapture() {
 
     setWhisperBadge('Recording', 'recording');
 
-    // Flush buffer to Whisper every 8 seconds
-    whisperFlushTimer = setInterval(() => flushWhisperBuffer(), 8000);
+    // Flush buffer to Whisper every 3 seconds for near-real-time transcription
+    whisperFlushTimer = setInterval(() => flushWhisperBuffer(), 3000);
   } catch (err) {
     console.error('[Whisper] Mic access failed:', err.message);
     isListening = false;
@@ -447,7 +481,7 @@ function stopWhisperCapture() {
 }
 
 async function flushWhisperBuffer() {
-  if (whisperBuffer.length < 16000) return; // need at least 1 second of audio
+  if (whisperBuffer.length < 8000) return; // need at least 0.5s of audio at 16 kHz
   const chunk = new Float32Array(whisperBuffer.splice(0, whisperBuffer.length));
   const modelId = settings.whisper_model || 'Xenova/whisper-base.en';
 
@@ -913,6 +947,13 @@ async function pushVerse() {
   if (!selectedVerse) return;
   isBlank = false;
 
+  // Auto-open display window if it isn't already open
+  if (!displayWindowOpen) {
+    const r = await api.openDisplay();
+    displayWindowOpen = !!r.open;
+    updateDisplayBtn();
+  }
+
   const verse = { ...selectedVerse };
   if (!verse.translation) {
     verse.translation = document.getElementById('translation-select')?.value || 'KJV';
@@ -1170,10 +1211,49 @@ async function loadAllSettings() {
 
   if (s.bg_type) setActiveSegBtn('rs-bg-type', s.bg_type);
 
+  // Restore bg color pickers
+  const bgColorEl = document.getElementById('setting-bg-color');
+  if (bgColorEl && s.bg_color) bgColorEl.value = s.bg_color;
+  const bgGradS = document.getElementById('setting-bg-grad-start');
+  if (bgGradS && s.bg_gradient_start) bgGradS.value = s.bg_gradient_start;
+  const bgGradE = document.getElementById('setting-bg-grad-end');
+  if (bgGradE && s.bg_gradient_end) bgGradE.value = s.bg_gradient_end;
+
   const bgUrlEl = document.getElementById('setting-bg-image-url');
   if (bgUrlEl && s.bg_image_url) bgUrlEl.value = s.bg_image_url;
-  const bgRow = document.getElementById('bg-image-row');
-  if (bgRow) bgRow.style.display = s.bg_type === 'image' ? 'flex' : 'none';
+
+  // Show the correct bg sub-row
+  const bgType = s.bg_type || 'solid';
+  const solidRow = document.getElementById('bg-solid-row');
+  const gradRow  = document.getElementById('bg-gradient-row');
+  const imgRow   = document.getElementById('bg-image-row');
+  if (solidRow) solidRow.style.display = bgType === 'solid'    ? 'flex'  : 'none';
+  if (gradRow)  gradRow.style.display  = bgType === 'gradient' ? 'block' : 'none';
+  if (imgRow)   imgRow.style.display   = bgType === 'image'    ? 'block' : 'none';
+
+  // Restore HDMI toggle & auto-open display if it was enabled
+  const hdmiToggle = document.getElementById('hdmi-toggle');
+  if (hdmiToggle) {
+    const hdmiEnabled = s.hdmi_enabled !== 'false'; // default true
+    hdmiToggle.checked = hdmiEnabled;
+    if (hdmiEnabled && !displayWindowOpen) {
+      const r = await api.openDisplay();
+      displayWindowOpen = !!r.open;
+      updateDisplayBtn();
+    }
+  }
+
+  // Restore NDI toggle & re-open NDI window if it was enabled
+  const ndiToggle = document.getElementById('ndi-toggle');
+  if (ndiToggle) {
+    const ndiEnabled = s.ndi_enabled === 'true';
+    ndiToggle.checked = ndiEnabled;
+    if (ndiEnabled) await api.openNdiDisplay(true);
+  }
+
+  // Restore HDMI layout button
+  if (s.hdmi_layout) setActiveSegBtn('hdmi-layout', s.hdmi_layout);
+  if (s.ndi_layout)  setActiveSegBtn('ndi-layout',  s.ndi_layout);
 }
 
 async function loadSettingsView() {
@@ -1263,13 +1343,19 @@ async function saveDisplaySettings() {
   const textColor  = document.getElementById('setting-text-color')?.value;
   const transition = document.getElementById('setting-transition-speed')?.value;
   const bgType     = document.querySelector('#rs-bg-type .seg-btn.active')?.dataset.val || 'solid';
-  const bgImageUrl = document.getElementById('setting-bg-image-url')?.value || '';
+  const bgColor    = document.getElementById('setting-bg-color')?.value       || '#000000';
+  const bgGradS    = document.getElementById('setting-bg-grad-start')?.value  || '#0a1628';
+  const bgGradE    = document.getElementById('setting-bg-grad-end')?.value    || '#1a3a5c';
+  const bgImageUrl = document.getElementById('setting-bg-image-url')?.value   || '';
 
   if (theme)      await api.saveSetting('theme', theme);
   if (fontSize)   await api.saveSetting('font_size', fontSize);
   if (textColor)  await api.saveSetting('text_color', textColor);
   if (transition !== undefined) await api.saveSetting('transition_speed', transition);
-  await api.saveSetting('bg_type', bgType);
+  await api.saveSetting('bg_type',           bgType);
+  await api.saveSetting('bg_color',          bgColor);
+  await api.saveSetting('bg_gradient_start', bgGradS);
+  await api.saveSetting('bg_gradient_end',   bgGradE);
   if (bgImageUrl) await api.saveSetting('bg_image_url', bgImageUrl);
 
   await loadAllSettings();
@@ -1376,17 +1462,61 @@ function bindEvents() {
     if (colorEl) colorEl.value = '#ffffff';
   });
 
+  // Background color presets
+  document.querySelectorAll('.color-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const colorEl = document.getElementById('setting-bg-color');
+      if (colorEl) colorEl.value = btn.dataset.color;
+    });
+  });
+
+  // Gradient presets
+  document.querySelectorAll('.grad-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const startEl = document.getElementById('setting-bg-grad-start');
+      const endEl   = document.getElementById('setting-bg-grad-end');
+      if (startEl) startEl.value = btn.dataset.start;
+      if (endEl)   endEl.value   = btn.dataset.end;
+    });
+  });
+
+  // Background image file upload
+  document.getElementById('bg-upload-btn')?.addEventListener('click', () => {
+    document.getElementById('bg-file-input')?.click();
+  });
+  document.getElementById('bg-file-input')?.addEventListener('change', async e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const result = await api.saveBackgroundImage(file.path);
+    if (result.ok) {
+      const urlEl = document.getElementById('setting-bg-image-url');
+      if (urlEl) urlEl.value = result.filePath;
+      showToast('Image uploaded');
+    } else {
+      showToast('Upload failed: ' + result.error);
+    }
+  });
+
   // Right sidebar Outputs pane — toggle display window
   document.getElementById('open-display-btn')?.addEventListener('click', async () => {
     const result = await api.openDisplay();
     displayWindowOpen = !!result.open;
     updateDisplayBtn();
   });
-  document.getElementById('hdmi-toggle')?.addEventListener('change', e => {
-    api.saveSetting('hdmi_enabled', e.target.checked.toString());
+  document.getElementById('hdmi-toggle')?.addEventListener('change', async e => {
+    const want = e.target.checked;
+    // Sync display window open/closed state with the HDMI toggle
+    if (want !== displayWindowOpen) {
+      const r = await api.openDisplay();
+      displayWindowOpen = !!r.open;
+      updateDisplayBtn();
+    }
+    api.saveSetting('hdmi_enabled', want.toString());
   });
-  document.getElementById('ndi-toggle')?.addEventListener('change', e => {
-    api.saveSetting('ndi_enabled', e.target.checked.toString());
+  document.getElementById('ndi-toggle')?.addEventListener('change', async e => {
+    const want = e.target.checked;
+    await api.openNdiDisplay(want);
+    api.saveSetting('ndi_enabled', want.toString());
   });
 
   // Bibles pane import button

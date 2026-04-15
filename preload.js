@@ -60,6 +60,15 @@ contextBridge.exposeInMainWorld('biblecast', {
   openDisplay: () =>
     ipcRenderer.invoke('display:open'),
 
+  openNdiDisplay: (open) =>
+    ipcRenderer.invoke('display:open-ndi', open),
+
+  sendDisplayLayout: (data) =>
+    ipcRenderer.invoke('display:layout', data),
+
+  saveBackgroundImage: (srcPath) =>
+    ipcRenderer.invoke('background:save-image', srcPath),
+
   listMonitors: () =>
     ipcRenderer.invoke('display:list-monitors'),
 

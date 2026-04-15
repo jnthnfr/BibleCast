@@ -94,6 +94,7 @@ function parseXmlBible(xmlStr) {
 
 let operatorWindow = null;
 let displayWindow  = null;
+let ndiWindow      = null;
 let db = null;
 
 function getDb() {
@@ -151,6 +152,33 @@ function createDisplayWindow() {
   displayWindow.on('closed', () => { displayWindow = null; });
 }
 
+function createNdiWindow() {
+  // NDI virtual output — a second borderless window on the primary monitor,
+  // screen-capturable by OBS / vMix as a virtual NDI source.
+  const primary = screen.getPrimaryDisplay();
+  const { width, height } = primary.workAreaSize;
+  const winW = Math.round(width  * 0.4);
+  const winH = Math.round(winW   * 9 / 16);
+  const winX = primary.bounds.x + Math.round((width  - winW) / 2);
+  const winY = primary.bounds.y + Math.round((height - winH) / 2);
+
+  ndiWindow = new BrowserWindow({
+    x: winX, y: winY, width: winW, height: winH,
+    frame: false,
+    alwaysOnTop: true,
+    title: 'BibleCast — NDI Output',
+    backgroundColor: '#000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  ndiWindow.loadFile('src/display/display.html');
+  ndiWindow.on('closed', () => { ndiWindow = null; });
+}
+
 // --- App lifecycle ---
 
 app.whenReady().then(() => {
@@ -160,6 +188,24 @@ app.whenReady().then(() => {
   });
   // Pre-approve background permission checks (Web Speech API checks silently on every use)
   session.defaultSession.setPermissionCheckHandler((_wc, _permission, _origin, _details) => true);
+
+  // Allow Google speech API endpoints so Web Speech works behind strict CSPs
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; " +
+          "script-src 'self' 'unsafe-inline'; " +
+          "style-src 'self' 'unsafe-inline'; " +
+          "connect-src 'self' https://www.google.com https://*.googleapis.com wss://*.googleapis.com; " +
+          "media-src 'self' blob:; " +
+          "img-src 'self' data: blob: file: https:; " +
+          "font-src 'self' data:"
+        ],
+      },
+    });
+  });
 
   createOperatorWindow();
   // Display window is NOT created on launch — toggled via Outputs tab
@@ -249,15 +295,15 @@ function registerIpcHandlers() {
     };
     getDb().updateDisplayState(state);
 
-    if (displayWindow) {
-      displayWindow.webContents.send('display:update', {
-        type:        'verse',
-        reference:   verse.reference,
-        text:        verse.text,
-        translation: verse.translation || 'KJV',
-        visible:     true,
-      });
-    }
+    const verseMsg = {
+      type:        'verse',
+      reference:   verse.reference,
+      text:        verse.text,
+      translation: verse.translation || 'KJV',
+      visible:     true,
+    };
+    if (displayWindow) displayWindow.webContents.send('display:update', verseMsg);
+    if (ndiWindow)     ndiWindow.webContents.send('display:update', verseMsg);
 
     // Log to active session
     const sess = getDb().getActiveSession();
@@ -280,12 +326,9 @@ function registerIpcHandlers() {
   ipcMain.handle('display:blank', (_event, blank) => {
     getDb().updateDisplayState({ is_visible: blank ? 0 : 1 });
 
-    if (displayWindow) {
-      displayWindow.webContents.send('display:update', {
-        type:    'blank',
-        visible: !blank,
-      });
-    }
+    const blankMsg = { type: 'blank', visible: !blank };
+    if (displayWindow) displayWindow.webContents.send('display:update', blankMsg);
+    if (ndiWindow)     ndiWindow.webContents.send('display:update', blankMsg);
 
     return { ok: true };
   });
@@ -307,21 +350,29 @@ function registerIpcHandlers() {
   ipcMain.handle('settings:save', (_event, { key, value }) => {
     getDb().setSetting(key, value);
 
-    // Propagate display-affecting settings to display window immediately
-    const displayKeys = ['font_size','theme','text_color','transition_speed','show_translation','show_reference'];
+    // Propagate display-affecting settings to display windows immediately
+    const displayKeys = [
+      'font_size','theme','text_color','transition_speed','show_translation','show_reference',
+      'bg_type','bg_color','bg_gradient_start','bg_gradient_end','bg_image_url',
+    ];
     if (displayKeys.includes(key)) {
-      if (displayWindow) {
-        const s = getDb().getAllSettings();
-        displayWindow.webContents.send('display:update', {
-          type:            'settings',
-          fontSize:        s.font_size         || '64',
-          theme:           s.theme             || 'dark',
-          textColor:       s.text_color        || '#ffffff',
-          transitionSpeed: s.transition_speed  || '0.5',
-          showTranslation: s.show_translation  !== 'false',
-          showReference:   s.show_reference    !== 'false',
-        });
-      }
+      const s = getDb().getAllSettings();
+      const settingsMsg = {
+        type:             'settings',
+        fontSize:         s.font_size          || '64',
+        theme:            s.theme              || 'dark',
+        textColor:        s.text_color         || '#ffffff',
+        transitionSpeed:  s.transition_speed   || '0.5',
+        showTranslation:  s.show_translation   !== 'false',
+        showReference:    s.show_reference     !== 'false',
+        bgType:           s.bg_type            || 'solid',
+        bgColor:          s.bg_color           || '#000000',
+        bgGradientStart:  s.bg_gradient_start  || '#0a1628',
+        bgGradientEnd:    s.bg_gradient_end    || '#1a3a5c',
+        bgImageUrl:       s.bg_image_url       || '',
+      };
+      if (displayWindow) displayWindow.webContents.send('display:update', settingsMsg);
+      if (ndiWindow)     ndiWindow.webContents.send('display:update', settingsMsg);
     }
     return { ok: true };
   });
@@ -500,7 +551,7 @@ function registerIpcHandlers() {
     displayWindow.webContents.once('did-finish-load', () => {
       const state = getDb().getDisplayState();
       const s     = getDb().getAllSettings();
-      // Send settings first so theme/font are applied before verse renders
+      // Send settings first so theme/font/bg are applied before verse renders
       displayWindow.webContents.send('display:update', {
         type:            'settings',
         fontSize:        state?.font_size       || s.font_size         || '64',
@@ -509,7 +560,16 @@ function registerIpcHandlers() {
         transitionSpeed: s.transition_speed     || '0.5',
         showTranslation: s.show_translation     !== 'false',
         showReference:   s.show_reference       !== 'false',
+        bgType:          s.bg_type              || 'solid',
+        bgColor:         s.bg_color             || '#000000',
+        bgGradientStart: s.bg_gradient_start    || '#0a1628',
+        bgGradientEnd:   s.bg_gradient_end      || '#1a3a5c',
+        bgImageUrl:      s.bg_image_url         || '',
       });
+      // Apply saved layout
+      if (s.hdmi_layout) {
+        displayWindow.webContents.send('display:update', { type: 'layout', layout: s.hdmi_layout });
+      }
       // If there's a verse currently on display, push it
       if (state?.current_text && state.is_visible) {
         displayWindow.webContents.send('display:update', {
@@ -545,6 +605,71 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
+  // Open / close NDI virtual output window
+  ipcMain.handle('display:open-ndi', (_event, open) => {
+    if (open) {
+      if (!ndiWindow) {
+        createNdiWindow();
+        ndiWindow.webContents.once('did-finish-load', () => {
+          const state = getDb().getDisplayState();
+          const s     = getDb().getAllSettings();
+          ndiWindow.webContents.send('display:update', {
+            type:            'settings',
+            fontSize:        state?.font_size       || s.font_size         || '64',
+            theme:           state?.theme           || s.theme             || 'dark',
+            textColor:       s.text_color           || '#ffffff',
+            transitionSpeed: s.transition_speed     || '0.5',
+            showTranslation: s.show_translation     !== 'false',
+            showReference:   s.show_reference       !== 'false',
+            bgType:          s.bg_type              || 'solid',
+            bgColor:         s.bg_color             || '#000000',
+            bgGradientStart: s.bg_gradient_start    || '#0a1628',
+            bgGradientEnd:   s.bg_gradient_end      || '#1a3a5c',
+            bgImageUrl:      s.bg_image_url         || '',
+          });
+          if (s.ndi_layout) {
+            ndiWindow.webContents.send('display:update', { type: 'layout', layout: s.ndi_layout });
+          }
+          if (state?.current_text && state.is_visible) {
+            ndiWindow.webContents.send('display:update', {
+              type:        'verse',
+              reference:   state.current_reference,
+              text:        state.current_text,
+              translation: state.translation || 'KJV',
+              visible:     true,
+            });
+          }
+        });
+      }
+    } else {
+      if (ndiWindow) { ndiWindow.destroy(); ndiWindow = null; }
+    }
+    return { ok: true };
+  });
+
+  // Set layout (fullscreen / lower-third) for HDMI or NDI window
+  ipcMain.handle('display:layout', (_event, { target, layout }) => {
+    const msg = { type: 'layout', layout };
+    if (target === 'hdmi' && displayWindow) displayWindow.webContents.send('display:update', msg);
+    if (target === 'ndi'  && ndiWindow)     ndiWindow.webContents.send('display:update', msg);
+    getDb().setSetting(target === 'ndi' ? 'ndi_layout' : 'hdmi_layout', layout);
+    return { ok: true };
+  });
+
+  // Copy a background image file to the app userData backgrounds folder
+  ipcMain.handle('background:save-image', async (_event, srcPath) => {
+    try {
+      const bgDir  = path.join(app.getPath('userData'), 'backgrounds');
+      fs.mkdirSync(bgDir, { recursive: true });
+      const dest   = path.join(bgDir, path.basename(srcPath));
+      fs.copyFileSync(srcPath, dest);
+      const fileUrl = 'file:///' + dest.replace(/\\/g, '/');
+      return { ok: true, filePath: fileUrl };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   // ── Whisper AI (local, via @xenova/transformers) ─────────────────────────────
   let whisperPipeline = null;
   let whisperLoading  = false;
@@ -573,11 +698,10 @@ function registerIpcHandlers() {
         operatorWindow?.webContents.send('whisper:progress', progress);
       });
       const float32 = new Float32Array(audioArray);
+      // No chunk_length_s for short clips — let Whisper auto-size for speed
       const result  = await pipe(float32, {
-        chunk_length_s:  30,
-        stride_length_s: 5,
-        language:        'english',
-        task:            'transcribe',
+        language: 'english',
+        task:     'transcribe',
       });
       return { ok: true, text: result.text || '' };
     } catch (err) {

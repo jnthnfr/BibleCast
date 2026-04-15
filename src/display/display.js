@@ -12,13 +12,19 @@ async function init() {
   // Load full settings for text color, transition, show flags
   const settings = await api.getSettings();
   applySettings({
-    font_size:        state?.font_size  || settings.font_size  || '56',
-    theme:            state?.theme      || settings.theme      || 'dark',
-    text_color:       settings.text_color       || '#ffffff',
-    transition_speed: settings.transition_speed || '0.5',
-    show_reference:   settings.show_reference   !== 'false',
-    show_translation: settings.show_translation !== 'false',
+    font_size:         state?.font_size  || settings.font_size  || '56',
+    theme:             state?.theme      || settings.theme      || 'dark',
+    text_color:        settings.text_color         || '#ffffff',
+    transition_speed:  settings.transition_speed   || '0.5',
+    show_reference:    settings.show_reference     !== 'false',
+    show_translation:  settings.show_translation   !== 'false',
+    bg_type:           settings.bg_type            || 'solid',
+    bg_color:          settings.bg_color           || '#000000',
+    bg_gradient_start: settings.bg_gradient_start  || '#0a1628',
+    bg_gradient_end:   settings.bg_gradient_end    || '#1a3a5c',
+    bg_image_url:      settings.bg_image_url       || '',
   });
+  applyLayout(settings.hdmi_layout || 'full');
 
   if (state?.current_text && state.is_visible) {
     renderVerse(state.current_reference, state.current_text, state.translation);
@@ -41,14 +47,24 @@ function handleUpdate(data) {
     return;
   }
 
+  if (data.type === 'layout') {
+    applyLayout(data.layout);
+    return;
+  }
+
   if (data.type === 'settings') {
     applySettings({
-      font_size:        data.fontSize,
-      theme:            data.theme,
-      text_color:       data.textColor,
-      transition_speed: data.transitionSpeed,
-      show_reference:   data.showReference,
-      show_translation: data.showTranslation,
+      font_size:         data.fontSize,
+      theme:             data.theme,
+      text_color:        data.textColor,
+      transition_speed:  data.transitionSpeed,
+      show_reference:    data.showReference,
+      show_translation:  data.showTranslation,
+      bg_type:           data.bgType,
+      bg_color:          data.bgColor,
+      bg_gradient_start: data.bgGradientStart,
+      bg_gradient_end:   data.bgGradientEnd,
+      bg_image_url:      data.bgImageUrl,
     });
   }
 }
@@ -95,6 +111,21 @@ function applySettings(s) {
 
   if (s.show_reference  != null) showReference   = s.show_reference  !== false && s.show_reference  !== 'false';
   if (s.show_translation != null) showTranslation = s.show_translation !== false && s.show_translation !== 'false';
+
+  // Background
+  if (s.bg_type === 'solid' && s.bg_color) {
+    document.body.style.background = s.bg_color;
+  } else if (s.bg_type === 'gradient') {
+    const start = s.bg_gradient_start || '#0a1628';
+    const end   = s.bg_gradient_end   || '#1a3a5c';
+    document.body.style.background = `linear-gradient(135deg, ${start}, ${end})`;
+  } else if (s.bg_type === 'image' && s.bg_image_url) {
+    document.body.style.background = `url('${s.bg_image_url}') center/cover no-repeat`;
+  }
+}
+
+function applyLayout(layout) {
+  document.body.classList.toggle('layout-lower-third', layout === 'lower-third');
 }
 
 function escapeHtml(str) {

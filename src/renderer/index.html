@@ -288,8 +288,38 @@
               <button class="seg-btn" data-val="gradient">Gradient</button>
               <button class="seg-btn" data-val="image">Image</button>
             </div>
+
+            <!-- Solid color row -->
+            <div id="bg-solid-row" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px">
+              <input type="color" id="setting-bg-color" value="#000000" class="color-swatch" title="Pick background color" />
+              <button class="color-preset" data-color="#000000" style="background:#000000" title="Black"></button>
+              <button class="color-preset" data-color="#0a1628" style="background:#0a1628" title="Navy"></button>
+              <button class="color-preset" data-color="#1a0a0a" style="background:#1a0a0a" title="Dark Red"></button>
+              <button class="color-preset" data-color="#0a1a0a" style="background:#0a1a0a" title="Forest"></button>
+              <button class="color-preset" data-color="#1a1a2e" style="background:#1a1a2e" title="Deep Purple"></button>
+              <button class="color-preset" data-color="#ffffff" style="background:#ffffff;outline:1px solid #555" title="White"></button>
+            </div>
+
+            <!-- Gradient row -->
+            <div id="bg-gradient-row" style="display:none;margin-top:8px">
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                <input type="color" id="setting-bg-grad-start" value="#0a1628" class="color-swatch" title="Gradient start" />
+                <span style="color:var(--text-muted);font-size:11px">→</span>
+                <input type="color" id="setting-bg-grad-end" value="#1a3a5c" class="color-swatch" title="Gradient end" />
+              </div>
+              <div class="grad-presets">
+                <button class="grad-preset" data-start="#0a1628" data-end="#1a3a5c" style="background:linear-gradient(135deg,#0a1628,#1a3a5c)" title="Ocean"></button>
+                <button class="grad-preset" data-start="#1a0010" data-end="#6b0030" style="background:linear-gradient(135deg,#1a0010,#6b0030)" title="Crimson"></button>
+                <button class="grad-preset" data-start="#000000" data-end="#2c2c2c" style="background:linear-gradient(135deg,#000,#2c2c2c)" title="Midnight"></button>
+                <button class="grad-preset" data-start="#0d0d2b" data-end="#2b1d4e" style="background:linear-gradient(135deg,#0d0d2b,#2b1d4e)" title="Deep Space"></button>
+              </div>
+            </div>
+
+            <!-- Image row -->
             <div id="bg-image-row" style="display:none;margin-top:8px">
-              <input id="setting-bg-image-url" type="text" placeholder="https://…/background.jpg" />
+              <input id="setting-bg-image-url" type="text" placeholder="Image path or URL" style="margin-bottom:6px;width:100%" />
+              <input type="file" id="bg-file-input" accept="image/*" style="display:none" />
+              <button id="bg-upload-btn" class="btn btn-secondary btn-sm" style="width:100%">Upload Image…</button>
             </div>
 
             <button id="save-settings-btn" class="btn btn-primary" style="margin-top:16px;width:100%">
