@@ -745,8 +745,31 @@
               <div id="settings-available-list"></div>
             </div>
             <div class="setting-row-block">
-              <button id="settings-import-btn" class="btn btn-secondary btn-sm">Import JSON File…</button>
+              <button id="settings-import-btn" class="btn btn-secondary btn-sm">Import JSON / XML File…</button>
               <div id="settings-import-status" class="import-status" style="margin-top:6px"></div>
+            </div>
+
+            <!-- Bible Gateway sub-section -->
+            <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+              <div class="setting-name" style="margin-bottom:4px;display:flex;align-items:center;gap:8px">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><polyline points="8 17 12 21 16 17"/>
+                  <line x1="12" y1="12" x2="12" y2="21"/>
+                  <path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/>
+                </svg>
+                Bible Gateway Scraper
+              </div>
+              <div class="setting-desc" style="margin-bottom:10px">
+                Download 29 additional translations (ESV, NIV, NASB, AMP, NKJV, NLT and more) directly from Bible Gateway via a Python background script.
+                Requires Python 3 installed on this machine.
+              </div>
+              <button id="open-scraper-btn" class="btn btn-secondary btn-sm">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                </svg>
+                Open Bible Gateway Scraper…
+              </button>
             </div>
           </section>
 

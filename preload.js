@@ -117,4 +117,23 @@ contextBridge.exposeInMainWorld('biblecast', {
 
   onUpdateAvailable: (callback) =>
     ipcRenderer.on('update:available', (_event, data) => callback(data)),
+
+  // --- Bible Gateway Scraper ---
+  openScraperWindow: () =>
+    ipcRenderer.invoke('scraper:open'),
+
+  checkPython: () =>
+    ipcRenderer.invoke('scraper:check-python'),
+
+  startScrape: (opts) =>
+    ipcRenderer.invoke('scraper:start', opts),
+
+  cancelScrape: () =>
+    ipcRenderer.invoke('scraper:cancel'),
+
+  onScrapeProgress: (callback) =>
+    ipcRenderer.on('scraper:progress', (_event, data) => callback(data)),
+
+  removeScrapeProgress: () =>
+    ipcRenderer.removeAllListeners('scraper:progress'),
 });

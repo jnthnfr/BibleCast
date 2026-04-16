@@ -92,11 +92,13 @@ function parseXmlBible(xmlStr) {
   return verses;
 }
 
-let operatorWindow   = null;
-let displayWindow    = null;
-let ndiWindow        = null;
-let gpuWorkerWindow  = null;
+let operatorWindow    = null;
+let displayWindow     = null;
+let ndiWindow         = null;
+let gpuWorkerWindow   = null;
+let scraperWindow     = null;
 let pendingGpuResolve = null;
+let activeScrapeProc  = null;
 let db = null;
 
 function getDb() {
@@ -193,6 +195,29 @@ function createGpuWorkerWindow() {
   });
   gpuWorkerWindow.loadFile('src/whisper/whisper-gpu.html');
   gpuWorkerWindow.on('closed', () => { gpuWorkerWindow = null; });
+}
+
+function createScraperWindow() {
+  scraperWindow = new BrowserWindow({
+    width: 700,
+    height: 620,
+    minWidth: 600,
+    minHeight: 500,
+    title: 'Bible Gateway Translations',
+    parent: operatorWindow || undefined,
+    modal: false,
+    resizable: true,
+    backgroundColor: '#1a1d23',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  scraperWindow.setMenuBarVisibility(false);
+  scraperWindow.loadFile('src/scraper/scraper.html');
+  scraperWindow.on('closed', () => { scraperWindow = null; });
 }
 
 // --- App lifecycle ---
@@ -896,6 +921,174 @@ function registerIpcHandlers() {
   });
 
   // Next / previous verse navigation (for voice commands)
+  // ── Bible Gateway Scraper ────────────────────────────────────────────────────
+
+  // Open / focus the scraper popup window
+  ipcMain.handle('scraper:open', () => {
+    if (scraperWindow && !scraperWindow.isDestroyed()) {
+      scraperWindow.focus();
+    } else {
+      createScraperWindow();
+    }
+    return { ok: true };
+  });
+
+  // Detect Python installation and return version + executable path
+  ipcMain.handle('scraper:check-python', async () => {
+    const { execFile } = require('child_process');
+
+    function tryPython(cmd) {
+      return new Promise(resolve => {
+        execFile(cmd, ['--version'], { timeout: 5000 }, (err, stdout, stderr) => {
+          const out = (stdout + stderr).trim();
+          if (!err && /^Python\s+3\./i.test(out)) {
+            resolve({ ok: true, version: out, path: cmd });
+          } else {
+            resolve({ ok: false });
+          }
+        });
+      });
+    }
+
+    // Try python3 first (preferred on most systems), then plain python
+    const r3 = await tryPython('python3');
+    if (r3.ok) return r3;
+    const r = await tryPython('python');
+    if (r.ok) return r;
+    return { ok: false, error: 'Python 3 not found. Install from python.org and ensure it is on PATH.' };
+  });
+
+  // Start scraping a queue of translations sequentially
+  ipcMain.handle('scraper:start', async (_event, { abbrs, pythonPath: pyPath }) => {
+    if (!abbrs || !abbrs.length) return { ok: false, error: 'No translations specified' };
+
+    const { spawn } = require('child_process');
+
+    // Resolve the bundled Python scraper script
+    const scriptPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'scripts', 'scrape_bible.py')
+      : path.join(__dirname, 'scripts', 'scrape_bible.py');
+
+    const TRANSLATION_NAMES = {
+      AMP: 'Amplified Bible', AKJV: 'American King James Version',
+      ASV: 'American Standard Version (1901)', BRG: 'Berean Reference Bible',
+      CSB: 'Christian Standard Bible', EHV: 'Evangelical Heritage Version',
+      ESV: 'English Standard Version', ESVUK: 'English Standard Version (UK)',
+      GNV: 'Geneva Bible (1599)', GW: "God's Word Translation",
+      ISV: 'International Standard Version', JUB: 'Jubilee Bible 2000',
+      KJV: 'King James Version', KJ21: 'King James Version 21st Century',
+      LEB: 'Lexham English Bible', MEV: 'Modern English Version',
+      NASB: 'New American Standard Bible (2020)', NASB1995: 'New American Standard Bible (1995)',
+      NET: 'New English Translation', NIV: 'New International Version',
+      NIVUK: 'New International Version (UK)', NKJV: 'New King James Version',
+      NLT: 'New Living Translation', NLV: 'New Life Version',
+      NOG: 'Names of God Bible', NRSV: 'New Revised Standard Version',
+      NRSVUE: 'NRSV Updated Edition', WEB: 'World English Bible',
+      YLT: "Young's Literal Translation",
+    };
+
+    async function scrapeOne(abbr) {
+      return new Promise(resolve => {
+        const proc = spawn(pyPath, [scriptPath, abbr], { stdio: ['ignore', 'pipe', 'ignore'] });
+        activeScrapeProc = proc;
+
+        let buffer      = '';
+        let finalVerses = null;
+
+        proc.stdout.on('data', chunk => {
+          buffer += chunk.toString('utf-8');
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // keep incomplete last line
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const msg = JSON.parse(trimmed);
+
+              // Forward every progress event to the scraper window
+              if (scraperWindow && !scraperWindow.isDestroyed()) {
+                scraperWindow.webContents.send('scraper:progress', { abbr, ...msg });
+              }
+
+              if (msg.type === 'done') finalVerses = msg.verses;
+            } catch (_) { /* non-JSON line — ignore */ }
+          }
+        });
+
+        proc.on('close', code => {
+          activeScrapeProc = null;
+          resolve({ ok: code === 0 && finalVerses != null, verses: finalVerses });
+        });
+
+        proc.on('error', err => {
+          activeScrapeProc = null;
+          resolve({ ok: false, error: err.message });
+        });
+      });
+    }
+
+    // Process queue sequentially in the background (non-blocking IPC return)
+    setImmediate(async () => {
+      for (const abbr of abbrs) {
+        if (scraperWindow && !scraperWindow.isDestroyed()) {
+          scraperWindow.webContents.send('scraper:progress', { abbr, type: 'starting' });
+        }
+
+        const result = await scrapeOne(abbr);
+
+        if (result.ok && result.verses && result.verses.length > 0) {
+          const name = TRANSLATION_NAMES[abbr.toUpperCase()] || abbr.toUpperCase() + ' Bible';
+          try {
+            getDb().addTranslation({
+              name,
+              abbreviation: abbr.toUpperCase(),
+              language: 'English',
+              data: result.verses,
+            });
+            if (scraperWindow && !scraperWindow.isDestroyed()) {
+              scraperWindow.webContents.send('scraper:progress', {
+                abbr, type: 'imported', count: result.verses.length, name,
+              });
+            }
+            // Notify the operator panel so the translation dropdown refreshes
+            if (operatorWindow && !operatorWindow.isDestroyed()) {
+              operatorWindow.webContents.send('translations:ready');
+            }
+          } catch (err) {
+            if (scraperWindow && !scraperWindow.isDestroyed()) {
+              scraperWindow.webContents.send('scraper:progress', {
+                abbr, type: 'error', msg: 'DB import failed: ' + err.message,
+              });
+            }
+          }
+        } else if (!result.ok) {
+          if (scraperWindow && !scraperWindow.isDestroyed()) {
+            scraperWindow.webContents.send('scraper:progress', {
+              abbr, type: 'error', msg: result.error || 'Scrape failed or returned 0 verses',
+            });
+          }
+        }
+      }
+
+      // Signal that the full queue is done
+      if (scraperWindow && !scraperWindow.isDestroyed()) {
+        scraperWindow.webContents.send('scraper:progress', { type: 'queue-done' });
+      }
+    });
+
+    return { ok: true };
+  });
+
+  // Kill the active Python scrape process
+  ipcMain.handle('scraper:cancel', () => {
+    if (activeScrapeProc) {
+      try { activeScrapeProc.kill(); } catch (_) {}
+      activeScrapeProc = null;
+    }
+    return { ok: true };
+  });
+
   ipcMain.handle('verse:navigate', async (_event, { direction }) => {
     const state = getDb().getDisplayState();
     if (!state || !state.current_reference) return { ok: false };

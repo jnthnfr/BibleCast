@@ -1810,6 +1810,9 @@ function bindEvents() {
     showToast('KJV Bible loaded — ready to use!');
   });
 
+  // Bible Gateway scraper popup
+  document.getElementById('open-scraper-btn')?.addEventListener('click', () => api.openScraperWindow());
+
   // Check for updates button (Settings → Application)
   document.getElementById('check-updates-btn')?.addEventListener('click', checkForUpdates);
 

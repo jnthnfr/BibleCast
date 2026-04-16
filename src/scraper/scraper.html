@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bible Gateway Translations</title>
+  <link rel="stylesheet" href="scraper.css" />
+</head>
+<body>
+<div class="popup">
+
+  <!-- Header -->
+  <div class="popup-header">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+    </svg>
+    <span class="popup-title">Bible Gateway Translations</span>
+  </div>
+
+  <!-- Body -->
+  <div class="popup-body">
+
+    <!-- Python detection bar -->
+    <div class="python-bar checking" id="python-bar">
+      <div class="dot"></div>
+      <span class="python-lbl">Python:</span>
+      <span class="python-val" id="python-val">Checking…</span>
+      <span class="python-note" id="python-note"></span>
+    </div>
+
+    <!-- Copyright notice -->
+    <div class="notice">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <span>
+        Translations marked <strong style="color:var(--danger)">© Copyright</strong> are scraped from Bible Gateway for personal/local church use only.
+        Free translations are open-licensed and may be freely distributed.
+        This tool requires Python 3 and an internet connection during download.
+      </span>
+    </div>
+
+    <!-- List header -->
+    <div class="list-controls">
+      <span class="list-lbl">Available Translations (33)</span>
+      <button class="btn-xs" id="select-all-btn">Select All</button>
+      <button class="btn-xs" id="select-none-btn">Select None</button>
+      <button class="btn-xs" id="select-free-btn">Free Only</button>
+    </div>
+
+    <!-- Translation checklist -->
+    <div class="translation-list" id="translation-list">
+      <!-- populated by JS -->
+    </div>
+
+    <!-- Progress area (hidden until scraping starts) -->
+    <div class="progress-area" id="progress-area">
+      <div class="prog-hdr">Download Progress</div>
+      <div id="progress-rows"></div>
+    </div>
+
+  </div><!-- /.popup-body -->
+
+  <!-- Footer -->
+  <div class="popup-footer">
+    <span class="footer-info" id="footer-info">Select translations to download</span>
+    <button class="btn btn-secondary" id="close-btn">Close</button>
+    <button class="btn btn-danger" id="cancel-btn" style="display:none">Cancel</button>
+    <button class="btn btn-primary" id="download-btn" disabled>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/>
+        <path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/>
+      </svg>
+      Download
+    </button>
+  </div>
+
+</div><!-- /.popup -->
+<script src="scraper.js"></script>
+</body>
+</html>

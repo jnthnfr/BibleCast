@@ -15,6 +15,9 @@
     "!**/*.md",
     "!dist/**/*"
   ],
+  "extraResources": [
+    { "from": "scripts/scrape_bible.py", "to": "scripts/scrape_bible.py" }
+  ],
   "win": {
     "target": [
       { "target": "nsis", "arch": ["x64"] }

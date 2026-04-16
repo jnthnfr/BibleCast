@@ -1,0 +1,347 @@
+/* BibleCast — Bible Gateway Scraper Popup */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:           #1a1d23;
+  --surface:      #22262e;
+  --surface-2:    #2a2f38;
+  --border:       #333840;
+  --border-light: #3d4350;
+  --text:         #e8eaf0;
+  --text-muted:   #7a8292;
+  --text-dim:     #555e70;
+  --primary:      #4f8ef7;
+  --primary-hover:#6aa1ff;
+  --success:      #3dba6f;
+  --warning:      #f5a623;
+  --danger:       #e05252;
+  --radius:       6px;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  user-select: none;
+  overflow: hidden;
+}
+
+/* ── Layout ──────────────────────────────────────────────── */
+
+.popup {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.popup-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.popup-header svg {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.popup-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+
+.popup-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 14px 16px;
+  gap: 12px;
+}
+
+/* ── Python status bar ───────────────────────────────────── */
+
+.python-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+.python-bar .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.python-bar.ok   .dot { background: var(--success); }
+.python-bar.fail .dot { background: var(--danger); }
+.python-bar.checking .dot {
+  background: var(--warning);
+  animation: pulse 1s infinite;
+}
+
+.python-bar .python-lbl { color: var(--text-muted); }
+.python-bar .python-val { color: var(--text); font-weight: 500; }
+.python-bar .python-note {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ── Notice banner ───────────────────────────────────────── */
+
+.notice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: rgba(245,166,35,0.08);
+  border: 1px solid rgba(245,166,35,0.25);
+  font-size: 0.75rem;
+  color: var(--warning);
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+
+.notice svg { flex-shrink: 0; margin-top: 1px; }
+
+/* ── Translation list ────────────────────────────────────── */
+
+.list-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.list-lbl {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.btn-xs {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-light);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-xs:hover { color: var(--text); border-color: var(--primary); }
+
+.translation-list {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.translation-list::-webkit-scrollbar { width: 5px; }
+.translation-list::-webkit-scrollbar-track { background: transparent; }
+.translation-list::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+
+.tl-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.tl-item:last-child { border-bottom: none; }
+.tl-item:hover { background: rgba(79,142,247,0.06); }
+.tl-item.installed { opacity: 0.5; pointer-events: none; }
+
+.tl-item input[type="checkbox"] {
+  flex-shrink: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+}
+
+.tl-abbr {
+  font-family: monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--primary);
+  min-width: 72px;
+}
+
+.tl-name {
+  flex: 1;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.tl-tag {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.tl-tag.copyright { background: rgba(224,82,82,0.15); color: var(--danger); }
+.tl-tag.installed { background: rgba(61,186,111,0.15); color: var(--success); }
+.tl-tag.free      { background: rgba(79,142,247,0.12); color: var(--primary); }
+
+/* ── Progress area ───────────────────────────────────────── */
+
+.progress-area {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 10px 12px;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.progress-area.visible { display: flex; }
+
+.progress-area::-webkit-scrollbar { width: 5px; }
+.progress-area::-webkit-scrollbar-track { background: transparent; }
+.progress-area::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+
+.prog-hdr {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.prog-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.79rem;
+}
+
+.prog-abbr {
+  font-family: monospace;
+  font-weight: 600;
+  min-width: 66px;
+  color: var(--text-muted);
+}
+.prog-abbr.active { color: var(--primary); }
+.prog-abbr.done   { color: var(--success); }
+.prog-abbr.error  { color: var(--danger); }
+
+.prog-bar-wrap {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.prog-bar {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+.prog-bar.done  { background: var(--success); }
+.prog-bar.error { background: var(--danger); }
+
+.prog-status {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  min-width: 140px;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Footer / action bar ─────────────────────────────────── */
+
+.popup-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.footer-info {
+  flex: 1;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-secondary {
+  background: var(--surface-2);
+  border-color: var(--border-light);
+  color: var(--text);
+}
+.btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+
+.btn-danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn-danger:hover { background: rgba(224,82,82,0.1); }
+
+/* ── Animations ──────────────────────────────────────────── */
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spin { animation: spin 1s linear infinite; }
