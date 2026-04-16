@@ -273,7 +273,7 @@ app.whenReady().then(() => {
           "script-src 'self' 'unsafe-inline' blob:; " +
           "worker-src blob:; " +
           "style-src 'self' 'unsafe-inline'; " +
-          "connect-src 'self' app-asset: blob: https://*.githubusercontent.com; " +
+          "connect-src 'self' blob: https://*.githubusercontent.com; " +
           "media-src 'self' blob:; " +
           "img-src 'self' data: blob: file: https:; " +
           "font-src 'self' data:"
@@ -949,6 +949,14 @@ function registerIpcHandlers() {
     } catch (err) {
       return { ok: false, error: err.message };
     }
+  });
+
+  // ── Vosk model ───────────────────────────────────────────────────────────────
+  ipcMain.handle('vosk:read-model', () => {
+    const modelPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'vosk', 'vosk-model-small-en-us-0.15.tar.gz')
+      : path.join(__dirname, 'assets', 'vosk', 'vosk-model-small-en-us-0.15.tar.gz');
+    return fs.readFileSync(modelPath); // returned as Buffer → Uint8Array in renderer
   });
 
   ipcMain.handle('updates:open-release', (_event, url) => {

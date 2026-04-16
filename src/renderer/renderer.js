@@ -523,10 +523,12 @@ async function startVoskCapture() {
     const VoskLib = await loadVoskLib();
 
     if (!voskModel) {
-      // Load from bundled asset — no internet required
-      voskModel = await VoskLib.createModel(
-        'app-asset://vosk/vosk-model-small-en-us-0.15.tar.gz'
-      );
+      // Read model from disk via IPC, wrap in a blob: URL so the vosk Worker can fetch it
+      const modelBuffer = await api.readVoskModel();
+      const modelBlob   = new Blob([modelBuffer], { type: 'application/gzip' });
+      const modelUrl    = URL.createObjectURL(modelBlob);
+      voskModel = await VoskLib.createModel(modelUrl);
+      URL.revokeObjectURL(modelUrl);
     }
 
     voskRec = new voskModel.KaldiRecognizer(16000);

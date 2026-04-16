@@ -121,6 +121,10 @@ contextBridge.exposeInMainWorld('biblecast', {
   onUpdateAvailable: (callback) =>
     ipcRenderer.on('update:available', (_event, data) => callback(data)),
 
+  // --- Vosk model ---
+  readVoskModel: () =>
+    ipcRenderer.invoke('vosk:read-model'),
+
   // --- Bible Gateway Scraper ---
   openScraperWindow: () =>
     ipcRenderer.invoke('scraper:open'),
