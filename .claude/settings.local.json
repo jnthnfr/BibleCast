@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(node -e ':*)",
+      "Bash(npm start:*)",
+      "Bash(git config:*)",
+      "Bash(python -c \"import meaningless; help\\(meaningless.BibleGatewayExtractor.get_book\\)\")",
+      "Bash(python -c \"import meaningless; print\\(dir\\(meaningless\\)\\)\")",
+      "Bash(python -c \"from meaningless import BibleGatewayDownloader; help\\(BibleGatewayDownloader\\)\")",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(gh release create v1.1.1 --title 'v1.1.1 — Bug Fix Pass' --notes ':*)",
+      "Bash(where gh:*)",
+      "Bash(winget list:*)",
+      "Bash(cmd:*)",
+      "Bash(/c/Users/INRA_PC/AppData/Local/GitHubCLI/bin/gh.exe release:*)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" release list --repo jnthnfr/BibleCast)",
+      "Bash(\"C:/Program Files/GitHub CLI/gh.exe\" auth login)",
+      "Bash(npm run:*)",
+      "Bash(tasklist)",
+      "Bash(mkdir -p /c/temp/biblecast-build)",
+      "Bash(npx electron-builder:*)",
+      "Read(//c/temp/BibleCast-build//**)",
+      "Read(//c/temp/BibleCast-build/**)",
+      "Bash(rm -rf /c/temp/BibleCast-build)",
+      "Bash(mkdir -p /c/temp/BibleCast-build)",
+      "Bash(cp -r assets data scripts src main.js preload.js package.json package-lock.json electron-builder.json /c/temp/BibleCast-build/)",
+      "Bash(npm install:*)",
+      "Bash(./node_modules/.bin/electron-builder --win nsis --x64 --config.directories.output=\"C:/temp/biblecast-dist\")",
+      "Bash(/c/Program Files/GitHub CLI/gh.exe release:*)",
+      "Bash(node -e \"console.log\\(require\\('electron'\\)\\)\")",
+      "Bash(node:*)"
+    ]
+  }
+}
