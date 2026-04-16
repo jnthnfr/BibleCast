@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, dialog, session } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, dialog, session, protocol, net } = require('electron');
 const fs   = require('fs');
 const path = require('path');
 
@@ -239,7 +239,23 @@ function createScraperWindow() {
 
 // --- App lifecycle ---
 
+// Register app-asset:// protocol so the renderer can load bundled files (e.g. Vosk model)
+// Must be called before app is ready.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app-asset', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
+]);
+
 app.whenReady().then(() => {
+  // Serve bundled assets via app-asset:// — maps app-asset://vosk/... to assets/vosk/... (dev)
+  // or process.resourcesPath/vosk/... (packaged)
+  protocol.handle('app-asset', (request) => {
+    const url = new URL(request.url);
+    const relativePath = url.hostname + url.pathname;
+    const basePath = app.isPackaged ? process.resourcesPath : path.join(__dirname, 'assets');
+    const filePath = path.join(basePath, relativePath).replace(/\\/g, '/');
+    return net.fetch('file:///' + filePath);
+  });
+
   // Allow microphone / speech access for Web Speech API
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
     cb(['media', 'microphone', 'speech'].includes(permission));
@@ -247,7 +263,7 @@ app.whenReady().then(() => {
   // Pre-approve background permission checks (Web Speech API checks silently on every use)
   session.defaultSession.setPermissionCheckHandler((_wc, _permission, _origin, _details) => true);
 
-  // CSP: allow vosk-browser blob Workers, model download, and local assets
+  // CSP: allow vosk-browser blob Workers and local app-asset:// model
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -257,7 +273,7 @@ app.whenReady().then(() => {
           "script-src 'self' 'unsafe-inline' blob:; " +
           "worker-src blob:; " +
           "style-src 'self' 'unsafe-inline'; " +
-          "connect-src 'self' https://ccoreilly.github.io https://*.githubusercontent.com; " +
+          "connect-src 'self' app-asset: blob: https://*.githubusercontent.com; " +
           "media-src 'self' blob:; " +
           "img-src 'self' data: blob: file: https:; " +
           "font-src 'self' data:"

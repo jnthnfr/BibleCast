@@ -5,6 +5,18 @@ Update this file after every development session or task.
 
 ---
 
+## v1.1.2 — 2026-04-16
+
+### Improvement
+- **Bundle Vosk model** — `vosk-model-small-en-us-0.15.tar.gz` (39 MB) now shipped with the app; no internet download on first use
+  - Registered `app-asset://` custom Electron protocol to serve bundled assets to the renderer
+  - `renderer.js`: model URL changed from CDN to `app-asset://vosk/vosk-model-small-en-us-0.15.tar.gz`
+  - `electron-builder.json`: model added as `extraResources` (outside ASAR, at `resources/vosk/`)
+  - CSP updated: removed `https://ccoreilly.github.io`, added `app-asset: blob:` to `connect-src`
+  - Status message no longer mentions "downloads ~45 MB"
+
+---
+
 ## v1.1.1 — 2026-04-16 (Bug Fix Pass + Release)
 
 ### Critical

@@ -512,14 +512,15 @@ async function startVoskCapture() {
   const el  = document.getElementById('transcript-text');
   const btn = document.getElementById('listen-btn');
   setWhisperBadge('Loading…', 'downloading');
-  if (el && !fullTranscript) el.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Loading Vosk speech model (first use downloads ~45 MB, cached after that)…</span>`;
+  if (el && !fullTranscript) el.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Loading Vosk speech model…</span>`;
 
   try {
     const VoskLib = await loadVoskLib();
 
     if (!voskModel) {
+      // Load from bundled asset — no internet required
       voskModel = await VoskLib.createModel(
-        'https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz'
+        'app-asset://vosk/vosk-model-small-en-us-0.15.tar.gz'
       );
     }
 

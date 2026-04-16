@@ -17,7 +17,8 @@
     "!dist/**/*"
   ],
   "extraResources": [
-    { "from": "scripts/scrape_bible.py", "to": "scripts/scrape_bible.py" }
+    { "from": "scripts/scrape_bible.py", "to": "scripts/scrape_bible.py" },
+    { "from": "assets/vosk/vosk-model-small-en-us-0.15.tar.gz", "to": "vosk/vosk-model-small-en-us-0.15.tar.gz" }
   ],
   "win": {
     "target": [
