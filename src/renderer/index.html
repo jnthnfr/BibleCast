@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self' 'unsafe-inline' blob:; worker-src blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://ccoreilly.github.io https://*.githubusercontent.com; media-src 'self' blob:; img-src 'self' data: blob: file: https:; font-src 'self' data:;" />
+    content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' blob: data: https://ccoreilly.github.io https://*.githubusercontent.com; media-src 'self' blob:; img-src 'self' data: blob: file: https:; font-src 'self' data:;" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BibleCast — Operator</title>
   <link rel="stylesheet" href="styles.css" />
@@ -464,11 +464,12 @@
             <div class="setting-row">
               <div class="setting-info">
                 <div class="setting-name">Speech engine</div>
-                <div class="setting-desc">Vosk gives real-time word-by-word output (downloads ~45 MB model once, fully offline). Whisper AI is more accurate but transcribes in 2–3 second chunks.</div>
+                <div class="setting-desc">Vosk gives real-time word-by-word output (downloads ~45 MB model once, fully offline). Whisper AI is more accurate but transcribes in 2–3 second chunks. Web Speech uses your system engine (often Google Cloud) and requires internet.</div>
               </div>
               <select id="setting-whisper-provider" class="setting-select">
                 <option value="vosk">Vosk — real-time, offline (recommended)</option>
                 <option value="whisper-local">Whisper AI — most accurate, offline (slower)</option>
+                <option value="web-speech">Web Speech API — system engine, cloud-based</option>
               </select>
             </div>
             <div class="setting-row" id="whisper-model-row">
@@ -792,7 +793,7 @@
             <div class="setting-row">
               <div class="setting-info">
                 <div class="setting-name">Software updates</div>
-                <div class="setting-desc">Current version: <span id="about-version">1.1.3</span></div>
+                <div class="setting-desc">Current version: <span id="about-version">1.1.4</span></div>
               </div>
               <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
                 <span id="update-status-text" style="font-size:0.75rem;color:var(--text-muted)"></span>
@@ -801,7 +802,7 @@
             </div>
             <div class="about-card">
               <div class="about-title">ℹ About BibleCast</div>
-              <div class="about-row"><span>Version</span><span id="about-version-card">1.1.3</span></div>
+              <div class="about-row"><span>Version</span><span id="about-version-card">1.1.4</span></div>
               <div class="about-row"><span>Build</span><span>April 2026</span></div>
               <div class="about-row">
                 <span>Stack</span>

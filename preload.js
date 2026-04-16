@@ -143,4 +143,13 @@ contextBridge.exposeInMainWorld('biblecast', {
 
   removeScrapeProgress: () =>
     ipcRenderer.removeAllListeners('scraper:progress'),
+
+  // --- Chrome Web Speech Bridge ---
+  startChromeBridge: () => ipcRenderer.invoke('chrome:start-bridge'),
+  stopChromeBridge: () => ipcRenderer.invoke('chrome:stop-bridge'),
+  onChromeSpeechResult: (callback) =>
+    ipcRenderer.on('chrome-speech:result', (_event, data) => callback(data)),
+
+  onChromeSpeechError: (callback) =>
+    ipcRenderer.on('chrome-speech:error', (_event, msg) => callback(msg)),
 });

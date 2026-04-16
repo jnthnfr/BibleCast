@@ -5,6 +5,19 @@ Update this file after every development session or task.
 
 ---
 
+## v1.1.4 — 2026-04-16
+
+### Feature
+- **Chrome Web Speech Bridge** — "Web Speech API" option now spawns a hidden Chrome instance that runs `webkitSpeechRecognition` and pipes results back to BibleCast via a local HTTP server on `127.0.0.1`
+  - No new npm dependencies — uses native `http` and `child_process`
+  - Searches standard Windows Chrome install paths automatically
+  - Final results trigger verse prediction (`onNewFinalText`) just like Vosk/Whisper
+  - Chrome process is killed on Stop Listening and on app quit
+  - `/error` route added to bridge server; errors shown in transcript panel
+  - Microphone limitation acknowledged: Web Speech API only accepts OS default mic (physical device only — no piped audio without virtual mic drivers)
+
+---
+
 ## v1.1.3 — 2026-04-16
 
 ### Improvement

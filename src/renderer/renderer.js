@@ -414,16 +414,11 @@ function toggleListening() {
       startWhisperCapture();
     } else if (settings.whisper_provider === 'vosk') {
       startVoskCapture();
+    } else if (settings.whisper_provider === 'web-speech') {
+      startChromeBridgeCapture();
     } else {
-      if (!recognition) { isListening = false; return; }
-      try {
-        recognition.start();
-        setWhisperBadge('● Listening', 'recording');
-      } catch (e) {
-        isListening = false;
-        console.error('[WebSpeech] Could not start:', e.message);
-        return;
-      }
+      isListening = false;
+      return;
     }
     btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg> Stop Listening`;
     btn.classList.add('active');
@@ -432,13 +427,61 @@ function toggleListening() {
       stopWhisperCapture();
     } else if (settings.whisper_provider === 'vosk') {
       stopVoskCapture();
-    } else {
-      recognition?.stop();
+    } else if (settings.whisper_provider === 'web-speech') {
+      stopChromeBridgeCapture();
     }
     btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg> Start Listening`;
     btn.classList.remove('active');
     setWhisperBadge('');
   }
+}
+
+// ── Out-of-Process Web Speech Bridge ──────────────────────────────────────────
+let chromeBridgeReady = false;
+
+function startChromeBridgeCapture() {
+  if (!chromeBridgeReady) {
+    // Data from Chrome: { interim: string, final: string }
+    api.onChromeSpeechResult((data) => {
+      if (data.final) {
+        fullTranscript += (fullTranscript ? ' ' : '') + data.final;
+        updateTranscriptDisplay('');
+        onNewFinalText(data.final);
+      } else if (data.interim) {
+        updateTranscriptDisplay(data.interim);
+      }
+    });
+
+    api.onChromeSpeechError((msg) => {
+      console.warn('[ChromeBridge] Speech error:', msg);
+      const el = document.getElementById('transcript-text');
+      if (el) el.innerHTML = `<span style="color:var(--danger)">Web Speech error: ${escapeHtml(msg)}</span>`;
+    });
+
+    chromeBridgeReady = true;
+  }
+
+  api.startChromeBridge().then(res => {
+    if (!res.ok) {
+      isListening = false;
+      const el  = document.getElementById('transcript-text');
+      const btn = document.getElementById('listen-btn');
+      if (el) el.innerHTML = `<span style="color:var(--danger)">⚠ Web Speech Bridge Error: <strong>${escapeHtml(res.error || 'Chrome not found')}</strong></span>`;
+      if (btn) {
+        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg> Start Listening`;
+        btn.classList.remove('active');
+      }
+      setWhisperBadge('');
+    } else {
+      setWhisperBadge('● Listening (Chrome)', 'recording');
+      const el = document.getElementById('transcript-text');
+      if (el && !fullTranscript) el.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Chrome Web Speech active — speak and text will appear here.</span>`;
+    }
+  });
+}
+
+function stopChromeBridgeCapture() {
+  api.stopChromeBridge();
 }
 
 // ── Whisper AI — local neural network via @xenova/transformers ────────────────
@@ -519,16 +562,34 @@ async function startVoskCapture() {
       <span style="font-size:0.75rem">Extracting into memory — usually takes 5–15 s</span>
     </div>`;
 
+  const setStatus = (msg) => {
+    if (el) el.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px;color:var(--text-muted)">
+        <div class="vosk-spinner"></div>
+        <span style="font-style:italic">Loading Vosk speech model…</span>
+        <span style="font-size:0.75rem">${msg}</span>
+      </div>`;
+  };
+
   try {
+    setStatus('Loading library…');
     const VoskLib = await loadVoskLib();
+    console.log('[Vosk] lib loaded, createModel:', typeof VoskLib?.createModel);
 
     if (!voskModel) {
-      // Read model from disk via IPC, wrap in a blob: URL so the vosk Worker can fetch it
+      setStatus('Reading model from disk…');
       const modelBuffer = await api.readVoskModel();
-      const modelBlob   = new Blob([modelBuffer], { type: 'application/gzip' });
-      const modelUrl    = URL.createObjectURL(modelBlob);
+      console.log('[Vosk] model buffer size:', modelBuffer?.byteLength ?? modelBuffer?.length);
+
+      setStatus('Creating blob URL…');
+      const modelBlob = new Blob([modelBuffer], { type: 'application/gzip' });
+      const modelUrl  = URL.createObjectURL(modelBlob);
+      console.log('[Vosk] blob URL:', modelUrl);
+
+      setStatus('Extracting model into memory (5–15 s)…');
       voskModel = await VoskLib.createModel(modelUrl);
       URL.revokeObjectURL(modelUrl);
+      console.log('[Vosk] model ready');
     }
 
     voskRec = new voskModel.KaldiRecognizer(16000);
@@ -706,8 +767,40 @@ const BIBLE_BOOKS = [
 // e.g. "John 3:16", "John 3 16", "First Corinthians 13 4"
 const SCRIPTURE_REF_RE = /\b(?:(?:first|second|third|1st|2nd|3rd|1|2|3)\s+)?(?:genesis|gen|exodus|exod?|leviticus|lev|numbers|num|deuteronomy|deut|joshua|josh|judges|judg|ruth|(?:first|second|1st?|2nd?)\s*samuel|samuel|sam|(?:first|second|1st?|2nd?)\s*kings|kings|(?:first|second|1st?|2nd?)\s*chronicles|chronicles|chron|ezra|nehemiah|neh|esther|est|job|psalms?|ps|proverbs?|prov|ecclesiastes|eccl|song(?:\s*of\s*solomon)?|isaiah|isa|jeremiah|jer|lamentations|lam|ezekiel|ezek|daniel|dan|hosea|hos|joel|amos|obadiah|jonah|micah|mic|nahum|nah|habakkuk|hab|zephaniah|zeph|haggai|hag|zechariah|zech|malachi|mal|matthew|matt|mark|luke|john|acts|romans|rom|(?:first|second|1st?|2nd?)\s*corinthians|corinthians|cor|galatians|gal|ephesians|eph|philippians|phil|colossians|col|(?:first|second|1st?|2nd?)\s*thessalonians|thessalonians|thess|(?:first|second|1st?|2nd?)\s*timothy|timothy|tim|titus|philemon|phlm|hebrews|heb|james|jas|(?:first|second|1st?|2nd?)\s*peter|peter|pet|(?:first|second|third|1st?|2nd?|3rd?)\s*john|jude|revelation|rev)\s+(\d+)(?:[: ](\d+))?/i;
 
+function normalizeSpokenScripture(text) {
+  let norm = text.toLowerCase();
+  
+  // Remove filler words common in spoken references
+  norm = norm.replace(/\b(?:chapter|verse|verses)\b/g, ' ');
+
+  // Replace common homophones for numbers
+  norm = norm.replace(/\b(?:to|too|two)\b/g, '2');
+  norm = norm.replace(/\b(?:for|four)\b/g, '4');
+  norm = norm.replace(/\bate\b/g, '8');
+
+  // Replace textual numbers with digits
+  const numWords = {
+    'zero':0, 'one':1, 'three':3, 'five':5, 'six':6, 'seven':7, 'eight':8,
+    'nine':9, 'ten':10, 'eleven':11, 'twelve':12, 'thirteen':13, 'fourteen':14,
+    'fifteen':15, 'sixteen':16, 'seventeen':17, 'eighteen':18, 'nineteen':19,
+    'twenty':20, 'thirty':30, 'forty':40, 'fifty':50, 'sixty':60, 'seventy':70,
+    'eighty':80, 'ninety':90, "hundred": 100
+  };
+
+  for (const [word, digit] of Object.entries(numWords)) {
+    norm = norm.replace(new RegExp(`\\b${word}\\b`, 'g'), digit);
+  }
+
+  // Combine compound numbers (e.g., "20 3" -> 23)
+  norm = norm.replace(/\b(20|30|40|50|60|70|80|90)\s+([1-9])\b/g, (_, tens, ones) => parseInt(tens) + parseInt(ones));
+  norm = norm.replace(/\b(100)\s+([1-9]\d?)\b/g, (_, h, rest) => parseInt(h) + parseInt(rest));
+  
+  return norm.replace(/\s+/g, ' ').trim();
+}
+
 function detectScriptureRef(text) {
-  const m = text.match(SCRIPTURE_REF_RE);
+  const normalized = normalizeSpokenScripture(text);
+  const m = normalized.match(SCRIPTURE_REF_RE);
   return m ? m[0].trim() : null;
 }
 

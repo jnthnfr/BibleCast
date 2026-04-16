@@ -270,10 +270,10 @@ app.whenReady().then(() => {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self'; " +
-          "script-src 'self' 'unsafe-inline' blob:; " +
-          "worker-src blob:; " +
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; " +
+          "worker-src blob: data:; " +
           "style-src 'self' 'unsafe-inline'; " +
-          "connect-src 'self' blob: https://*.githubusercontent.com; " +
+          "connect-src 'self' blob: data: https://*.githubusercontent.com; " +
           "media-src 'self' blob:; " +
           "img-src 'self' data: blob: file: https:; " +
           "font-src 'self' data:"
@@ -1154,5 +1154,134 @@ function registerIpcHandlers() {
     next.reference = `${next.book} ${next.chapter}:${next.verse}`;
     next.translation = translation;
     return { ok: true, verse: next };
+  });
+
+  // ── Out-of-Process Chrome Web Speech Bridge ──────────────────────────────────
+  const http = require('http');
+  const os = require('os');
+  let chromeBridgeServer = null;
+  let chromeBridgePort = 0;
+  let chromeProcess = null;
+
+  function getSystemChromePath() {
+    const winPaths = [
+      'C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
+      'C:\\\\Program Files (x86)\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
+      path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'Application', 'chrome.exe')
+    ];
+    for (const p of winPaths) {
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  }
+
+  ipcMain.handle('chrome:start-bridge', async () => {
+    if (chromeProcess) return { ok: true, msg: 'Already running' };
+
+    const chromePath = getSystemChromePath();
+    if (!chromePath) return { ok: false, error: 'Google Chrome not found on this system.' };
+
+    return new Promise((resolve) => {
+      if (!chromeBridgeServer) {
+        chromeBridgeServer = http.createServer((req, res) => {
+          if (req.method === 'GET' && req.url === '/') {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(`
+              <!DOCTYPE html><html><body><h1>BibleCast Web Speech Bridge</h1>
+              <script>
+                const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SR) {
+                  fetch('/error', { method: 'POST', body: 'No SpeechRecognition in this browser' });
+                } else {
+                  const r = new SR();
+                  r.continuous = true;
+                  r.interimResults = true;
+                  r.lang = 'en-US';
+                  r.onresult = e => {
+                    let finalTxt = '', interimTxt = '';
+                    for (let i = e.resultIndex; i < e.results.length; ++i) {
+                      if (e.results[i].isFinal) finalTxt += e.results[i][0].transcript;
+                      else interimTxt += e.results[i][0].transcript;
+                    }
+                    if (interimTxt || finalTxt) {
+                       fetch('/result', {
+                         method: 'POST',
+                         headers: {'Content-Type': 'application/json'},
+                         body: JSON.stringify({ interim: interimTxt, final: finalTxt })
+                       }).catch(()=>{});
+                    }
+                  };
+                  r.onerror = (e) => {
+                    fetch('/error', { method: 'POST', body: e.error });
+                  };
+                  r.onend = () => { r.start(); };
+                  r.start();
+                }
+              </script>
+              </body></html>
+            `);
+          } else if (req.method === 'POST' && req.url === '/result') {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', () => {
+              try {
+                const data = JSON.parse(body);
+                const { webContents } = require('electron');
+                webContents.getAllWebContents().forEach(wc => {
+                  wc.send('chrome-speech:result', data);
+                });
+              } catch(e) {}
+              res.writeHead(200);
+              res.end('OK');
+            });
+          } else if (req.method === 'POST' && req.url === '/error') {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', () => {
+              const { webContents } = require('electron');
+              webContents.getAllWebContents().forEach(wc => {
+                wc.send('chrome-speech:error', body.toString());
+              });
+              res.writeHead(200);
+              res.end('OK');
+            });
+          } else {
+            res.writeHead(404);
+            res.end();
+          }
+        });
+
+        chromeBridgeServer.listen(0, '127.0.0.1', () => {
+          chromeBridgePort = chromeBridgeServer.address().port;
+          launchChrome();
+        });
+      } else {
+        launchChrome();
+      }
+
+      function launchChrome() {
+        const { spawn } = require('child_process');
+        chromeProcess = spawn(chromePath, [
+          \`--app=http://127.0.0.1:\${chromeBridgePort}/\`,
+          '--use-fake-ui-for-media-stream',
+          '--window-position=-2000,-2000'
+        ]);
+        chromeProcess.on('exit', () => { chromeProcess = null; });
+        resolve({ ok: true });
+      }
+    });
+  });
+
+  ipcMain.handle('chrome:stop-bridge', () => {
+    if (chromeProcess) {
+      chromeProcess.kill();
+      chromeProcess = null;
+    }
+    return { ok: true };
+  });
+
+  // Kill Chrome bridge process when BibleCast quits
+  app.on('before-quit', () => {
+    if (chromeProcess) { chromeProcess.kill(); chromeProcess = null; }
   });
 }
