@@ -5,7 +5,7 @@ Update this file after every development session or task.
 
 ---
 
-## Session: 2026-04-16
+## v1.1.0 — 2026-04-16
 
 ### Bible Gateway Scraper
 - Added `src/scraper/` — new popup window with a checklist of 29 translations (ESV, NIV, NASB, NKJV, NLT, AMP, CSB, and more)
