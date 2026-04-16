@@ -512,7 +512,12 @@ async function startVoskCapture() {
   const el  = document.getElementById('transcript-text');
   const btn = document.getElementById('listen-btn');
   setWhisperBadge('Loading…', 'downloading');
-  if (el && !fullTranscript) el.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Loading Vosk speech model…</span>`;
+  if (el && !fullTranscript) el.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px;color:var(--text-muted)">
+      <div class="vosk-spinner"></div>
+      <span style="font-style:italic">Loading Vosk speech model…</span>
+      <span style="font-size:0.75rem">Extracting into memory — usually takes 5–15 s</span>
+    </div>`;
 
   try {
     const VoskLib = await loadVoskLib();

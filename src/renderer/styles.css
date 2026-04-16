@@ -1434,3 +1434,16 @@ button { cursor: pointer; }
   color: var(--accent);
 }
 
+/* Vosk model loading spinner */
+@keyframes vosk-spin {
+  to { transform: rotate(360deg); }
+}
+.vosk-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--surface3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: vosk-spin 0.8s linear infinite;
+}
+
