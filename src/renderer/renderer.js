@@ -19,6 +19,9 @@ let lastProjectedAt    = 0;   // timestamp of last auto-projection
 // Whether the display window is currently open
 let displayWindowOpen = false;
 
+// Tracks whether initial settings have been loaded once (guards HDMI auto-open on re-load)
+let settingsLoaded = false;
+
 // Last update check result
 let updateInfo = null;
 
@@ -482,7 +485,7 @@ function stopWhisperCapture() {
   clearInterval(whisperFlushTimer);
   whisperFlushTimer = null;
   // Flush remaining audio before stopping
-  if (whisperBuffer.length > 16000) flushWhisperBuffer();
+  if (whisperBuffer.length > 8000) flushWhisperBuffer(); // match flushWhisperBuffer's own minimum threshold
   whisperBuffer = [];
   whisperProcessor?.disconnect();
   whisperProcessor = null;
@@ -753,7 +756,7 @@ function extractKeywords(text) {
   return text.toLowerCase()
     .replace(/[^a-z\s]/g, ' ')
     .split(/\s+/)
-    .filter(w => w.length > 3 && !STOP_WORDS.has(w));
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w)); // include 3-letter theological words: sin, God, law, ark, joy
 }
 
 function getConfidenceThreshold() {
@@ -1276,15 +1279,16 @@ async function syncDisplayState() {
 
   if (state.current_text) {
     const canvas = document.getElementById('live-canvas');
-    if (canvas && !canvas.querySelector('.preview-reference')) {
+    // Always update live canvas from DB state (removes stale DOM guard that blocked external changes)
+    if (canvas) {
       canvas.innerHTML = `
         <div style="padding:12px;text-align:center;width:100%">
           <div class="preview-reference">${escapeHtml(state.current_reference || '')}</div>
           <div class="preview-text">"${escapeHtml(state.current_text)}"</div>
         </div>
       `;
+      canvas.classList.toggle('blanked', !visible);
     }
-    if (canvas) canvas.classList.toggle('blanked', !visible);
   }
 }
 
@@ -1458,28 +1462,36 @@ async function loadAllSettings() {
   if (imgRow)   imgRow.style.display   = bgType === 'image'    ? 'block' : 'none';
 
   // Restore HDMI toggle & auto-open display if it was enabled
+  // Only auto-open once on initial load — not on every settings save/reload
   const hdmiToggle = document.getElementById('hdmi-toggle');
   if (hdmiToggle) {
     const hdmiEnabled = s.hdmi_enabled !== 'false'; // default true
     hdmiToggle.checked = hdmiEnabled;
-    if (hdmiEnabled && !displayWindowOpen) {
-      const r = await api.openDisplay();
-      displayWindowOpen = !!r.open;
-      updateDisplayBtn();
+    if (!settingsLoaded && hdmiEnabled && !displayWindowOpen) {
+      // Delay slightly so KJV auto-seed (800ms) completes before display window opens
+      setTimeout(async () => {
+        if (!displayWindowOpen) {
+          const r = await api.openDisplay();
+          displayWindowOpen = !!r.open;
+          updateDisplayBtn();
+        }
+      }, 1200);
     }
   }
 
-  // Restore NDI toggle & re-open NDI window if it was enabled
+  // Restore NDI toggle & re-open NDI window if it was enabled (only on first load)
   const ndiToggle = document.getElementById('ndi-toggle');
   if (ndiToggle) {
     const ndiEnabled = s.ndi_enabled === 'true';
     ndiToggle.checked = ndiEnabled;
-    if (ndiEnabled) await api.openNdiDisplay(true);
+    if (!settingsLoaded && ndiEnabled) await api.openNdiDisplay(true);
   }
 
   // Restore HDMI layout button
   if (s.hdmi_layout) setActiveSegBtn('hdmi-layout', s.hdmi_layout);
   if (s.ndi_layout)  setActiveSegBtn('ndi-layout',  s.ndi_layout);
+
+  settingsLoaded = true;
 }
 
 async function loadSettingsView() {
@@ -1797,6 +1809,17 @@ function bindEvents() {
       const canvas = document.getElementById('live-canvas');
       if (canvas) canvas.classList.toggle('blanked', !data.visible);
     }
+  });
+
+  // Display window closed by OS — keep displayWindowOpen flag in sync
+  api.onDisplayClosed(() => {
+    displayWindowOpen = false;
+    updateDisplayBtn();
+    updateStatusBadge(false);
+    updateLiveBadge(false);
+    const hdmiToggle = document.getElementById('hdmi-toggle');
+    if (hdmiToggle) hdmiToggle.checked = false;
+    api.saveSetting('hdmi_enabled', 'false');
   });
 
   // Navigate to settings (from main process)

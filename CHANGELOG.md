@@ -5,6 +5,35 @@ Update this file after every development session or task.
 
 ---
 
+## v1.1.1 — 2026-04-16 (Bug Fix Pass + Release)
+
+### Critical
+- **BUG-01** — Fixed stale `displayWindowOpen` flag when the projection window is closed via OS
+  - `main.js`: `createDisplayWindow()` now sends `display:window-closed` IPC to operator on window close
+  - `preload.js`: exposed `onDisplayClosed(callback)` via contextBridge
+  - `src/renderer/renderer.js`: handles `display:window-closed` — resets flag, updates buttons, unchecks HDMI toggle, persists setting
+- **BUG-10** — Fixed update checker placeholder: `GITHUB_OWNER='OWNER'` → `'jnthnfr'`, repo `'biblecast'` → `'BibleCast'`
+
+### Medium
+- **BUG-03** — Eliminated HDMI auto-open race condition on first launch
+  - `loadAllSettings()` now only auto-opens the display window once (guarded by `settingsLoaded` flag)
+  - Added 1200ms delay so KJV auto-seed completes before the display window initialises
+- **BUG-04** — Hardened Vosk packaging: added `node_modules/vosk-browser/dist/**/*` explicitly to `electron-builder.json`
+- **BUG-05** — Fixed Whisper stop discarding the last audio chunk: threshold `> 16000` → `> 8000` samples
+- **BUG-09** — Hardened Python scraper: pinned `meaningless>=0.9`; added post-scrape guard that errors on < 100 verses
+
+### Low / Cleanup
+- **BUG-12** — Keyword prediction now includes 3-letter theological words (`sin`, `God`, `law`) — min length `> 3` → `> 2`
+- **BUG-13** — Display sync always updates live canvas from DB; removed stale DOM guard
+- **BUG-14** — `bible-parser.js` wired into `verse:search` IPC handler; queries now normalised before DB lookup
+
+### Cosmetic / Error UX
+- **BUG-15** — `loadAllSettings()` no longer re-opens HDMI/NDI windows on every settings save
+- **BUG-16** — `getDb()` now shows a readable error dialog if `better-sqlite3` fails to load
+- Bumped `package.json` version: `1.1.0` → `1.1.1`
+
+---
+
 ## v1.1.0 — 2026-04-16
 
 ### Bible Gateway Scraper
@@ -120,5 +149,7 @@ Update this file after every development session or task.
 
 | Version | Date | Notes |
 |---|---|---|
+| 1.1.1 | 2026-04 | Bug fix pass: display sync, HDMI race condition, Vosk packaging, scraper hardening |
+| 1.1.0 | 2026-04 | Bible Gateway scraper, Vosk STT, NDI output, GPU Whisper, custom backgrounds |
 | 1.0.1 | 2026-04 | Bible search, scripture detection, hardware acceleration, UI fixes |
 | 1.0.0 | 2026-04 | Initial release — verse projection, sessions, multi-monitor, Whisper AI |

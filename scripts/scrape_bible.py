@@ -32,14 +32,14 @@ def ensure_meaningless():
         emit({'type': 'status', 'msg': 'Installing meaningless package…'})
         try:
             subprocess.check_call(
-                [sys.executable, '-m', 'pip', 'install', 'meaningless', '-q'],
+                [sys.executable, '-m', 'pip', 'install', 'meaningless>=0.9', '-q'],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
             return True
         except subprocess.CalledProcessError as exc:
             emit({'type': 'error', 'msg': f'pip install failed (exit {exc.returncode}). '
-                  'Please run manually: pip install meaningless'})
+                  'Please run manually: pip install meaningless>=0.9'})
             return False
 
 
@@ -168,6 +168,20 @@ def scrape(abbr):
                       'msg': f'Ch.{chap}: {exc}'})
 
             chapters_done += 1
+
+    # Validate result before emitting — catch silent scraper failures
+    # (Bible Gateway HTML changes can cause 0 verses without raising an exception)
+    if len(all_verses) < 100:
+        emit({
+            'type': 'error',
+            'msg': (
+                f'Only {len(all_verses)} verses collected for {abbr.upper()} — '
+                'this is likely too few. Bible Gateway may have changed its HTML structure '
+                'or this translation may use a different passage format. '
+                'Check that meaningless is up to date: pip install --upgrade meaningless'
+            ),
+        })
+        sys.exit(1)
 
     emit({'type': 'done', 'count': len(all_verses), 'verses': all_verses})
 

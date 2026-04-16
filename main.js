@@ -102,7 +102,18 @@ let activeScrapeProc  = null;
 let db = null;
 
 function getDb() {
-  if (!db) db = require('./src/lib/db');
+  if (!db) {
+    try {
+      db = require('./src/lib/db');
+    } catch (err) {
+      dialog.showErrorBox(
+        'BibleCast — Database Error',
+        'The database module failed to load. Please run:\n\n  npm run rebuild\n\nThen restart the app.\n\nDetail: ' + err.message
+      );
+      app.quit();
+      throw err;
+    }
+  }
   return db;
 }
 
@@ -153,7 +164,13 @@ function createDisplayWindow() {
   });
 
   displayWindow.loadFile('src/display/display.html');
-  displayWindow.on('closed', () => { displayWindow = null; });
+  displayWindow.on('closed', () => {
+    displayWindow = null;
+    // Notify the operator panel so it can update its displayWindowOpen flag
+    if (operatorWindow && !operatorWindow.isDestroyed()) {
+      operatorWindow.webContents.send('display:window-closed');
+    }
+  });
 }
 
 function createNdiWindow() {
@@ -324,9 +341,13 @@ function showNoTranslationsDialog() {
 
 function registerIpcHandlers() {
 
-  // Verse search
+  // Verse search — normalise the query through bible-parser before hitting the DB
+  const { parseReference } = require('./src/lib/bible-parser');
   ipcMain.handle('verse:search', (_event, { query, translation }) => {
-    return getDb().searchVerses({ query, translation });
+    // Try to parse a structured reference first (e.g. "1 Cor 13:4" or "john 3 16")
+    const parsed = parseReference(query);
+    const normalisedQuery = parsed ? parsed.formatted : query;
+    return getDb().searchVerses({ query: normalisedQuery, translation });
   });
 
   // Push a verse to the display window
@@ -859,8 +880,8 @@ function registerIpcHandlers() {
   });
 
   // ── Update checker ───────────────────────────────────────────────────────────
-  const GITHUB_OWNER = 'OWNER';     // ← replace with your GitHub username
-  const GITHUB_REPO  = 'biblecast';
+  const GITHUB_OWNER = 'jnthnfr';
+  const GITHUB_REPO  = 'BibleCast';
 
   ipcMain.handle('updates:check', async () => {
     const https = require('https');

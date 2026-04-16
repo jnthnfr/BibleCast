@@ -79,6 +79,9 @@ contextBridge.exposeInMainWorld('biblecast', {
   onDisplayUpdate: (callback) =>
     ipcRenderer.on('display:update', (_event, data) => callback(data)),
 
+  onDisplayClosed: (callback) =>
+    ipcRenderer.on('display:window-closed', () => callback()),
+
   onNavSettings: (callback) =>
     ipcRenderer.on('nav:settings', () => callback()),
 

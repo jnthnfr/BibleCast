@@ -11,6 +11,7 @@
     "src/**/*",
     "assets/**/*",
     "node_modules/**/*",
+    "node_modules/vosk-browser/dist/**/*",
     "!node_modules/.cache",
     "!**/*.md",
     "!dist/**/*"
