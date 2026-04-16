@@ -1262,7 +1262,7 @@ function registerIpcHandlers() {
       function launchChrome() {
         const { spawn } = require('child_process');
         chromeProcess = spawn(chromePath, [
-          \`--app=http://127.0.0.1:\${chromeBridgePort}/\`,
+          '--app=http://127.0.0.1:' + chromeBridgePort + '/',
           '--use-fake-ui-for-media-stream',
           '--window-position=-2000,-2000'
         ]);
