@@ -12,14 +12,29 @@ BibleCast is a Windows desktop application for church presenters. The operator s
 |---|---|
 | **Verse search** | Search by reference (e.g. "John 3:16") or keyword; results appear instantly from a local SQLite database |
 | **Projection window** | A second Electron window on the second monitor displays the verse in full-screen format, updated via Electron IPC |
+| **NDI virtual output** | Second borderless window on the primary monitor, capturable by OBS/vMix as a virtual NDI source |
 | **Multiple translations** | Switch between Bible translations at runtime; translations stored in SQLite |
+| **getbible.net download** | 14 free public-domain translations downloadable in-app (KJV, ASV, WEB, YLT, BBE, and more) |
+| **Bible Gateway Scraper** | Popup window that runs a Python background script to scrape 29 translations (ESV, NIV, NASB, NKJV, NLT, AMP, CSB…) from Bible Gateway with real-time per-book progress |
+| **Import JSON / XML** | Import any Bible translation from a flat JSON array or Holy Bible XML / OSIS / Zefania XML file |
 | **Manual push** | Operator selects a verse and pushes it to the display with one click |
 | **Display control** | Show/hide the projection overlay, blank screen between verses |
-| **Presentation mode** | Step through a pre-selected list of verses sequentially |
 | **Session management** | Each service is tracked as a named session; all displayed verses are logged per session |
 | **History view** | Browse past sessions and all displayed verses |
-| **Settings** | Configurable display font size, theme, background colour, overlay style |
-| **Graceful shutdown** | Projection window and database connections are cleanly closed on app exit |
+| **Vosk transcription** | Real-time offline speech recognition (word-by-word) via vosk-browser WASM; ~45 MB model downloaded once |
+| **Whisper AI** | High-accuracy offline transcription in 2–3 s chunks via @xenova/transformers; CPU and WebGPU modes |
+| **Scripture detection** | Detects spoken references ("John three sixteen") and suggests matching verses automatically |
+| **Auto-projection** | Optionally push detected verses to the display without operator input |
+| **Voice commands** | "next verse", "previous verse", "clear screen", "repeat" — detected in live transcript |
+| **Sermon summary** | Local keyword-extraction summary or GPT-3.5 AI summary (requires OpenAI key) |
+| **Display layouts** | Full-screen or lower-third overlay per output (HDMI + NDI independently) |
+| **Custom backgrounds** | Solid colour, gradient, or image background; colour presets and gradient presets included |
+| **Transition speed** | Configurable CSS fade duration between verses |
+| **Multi-monitor** | Projection window auto-placed on the second display; monitor selector in Outputs tab |
+| **GPU acceleration** | WebGPU-accelerated Whisper AI via a hidden worker BrowserWindow |
+| **Update checker** | Checks GitHub releases API 8 s after launch; shows banner if a newer version exists |
+| **Settings** | Configurable font size, theme, background, session defaults, speech engine, detection sensitivity |
+| **Graceful shutdown** | All output windows and DB connections cleanly closed on app exit |
 
 ---
 
@@ -58,20 +73,32 @@ BibleCast/
 │   │   ├── index.html       # Operator UI entry point
 │   │   ├── renderer.js      # Operator UI logic
 │   │   └── styles.css       # Operator panel styles
-│   ├── display/             # Projection window (second monitor)
+│   ├── display/             # Projection window (second monitor) + NDI output
 │   │   ├── display.html     # Full-screen verse display entry point
 │   │   ├── display.js       # Display window logic (receives IPC pushes)
-│   │   └── display.css      # Projection styles (large text, themes)
+│   │   └── display.css      # Projection styles (large text, themes, backgrounds)
+│   ├── scraper/             # Bible Gateway scraper popup window
+│   │   ├── scraper.html     # Translation checklist UI
+│   │   ├── scraper.js       # Popup logic — Python detection, progress rendering
+│   │   └── scraper.css      # Popup styles
+│   ├── whisper/             # Hidden GPU worker window for WebGPU Whisper
+│   │   ├── whisper-gpu.html
+│   │   └── whisper-gpu.js
 │   └── lib/                 # Shared utilities (main process)
 │       ├── db.js            # SQLite connection, schema init, query helpers
-│       ├── bible-parser.js  # Reference parsing ("John 3:16" → { book, chapter, verse })
-│       └── session.js       # Session create/read/update helpers
+│       └── bible-parser.js  # Reference parsing ("John 3:16" → { book, chapter, verse })
+├── scripts/
+│   ├── launch.js            # npm start wrapper (unsets ELECTRON_RUN_AS_NODE)
+│   ├── scrape_bible.py      # Python scraper — uses meaningless WebExtractor
+│   ├── seed-db.js           # CLI: seed DB from a local JSON file
+│   ├── bundle-kjv.js        # Bundles KJV into data/translations/kjv.json
+│   └── download-translations.js  # CLI: download public-domain translations
 ├── data/
-│   └── translations/        # Bundled Bible translation JSON files (KJV, NIV, etc.)
+│   └── translations/        # Bundled KJV JSON (auto-seeded on first launch)
 ├── assets/
 │   └── icons/               # App icons (.ico, .png)
 ├── package.json
-├── electron-builder.json    # Installer / distribution config
+├── electron-builder.json    # Installer / distribution config (includes scrape_bible.py)
 └── DEVELOPER.md
 ```
 
@@ -182,13 +209,40 @@ All renderer ↔ main communication goes through `preload.js` via `window.biblec
 |---|---|---|
 | `verse:search` | renderer → main | Search verses by reference or keyword |
 | `verse:push` | renderer → main | Push a verse to the projection window |
-| `display:show` | main → display | Send verse text + metadata to projection window |
+| `verse:navigate` | renderer → main | Step to next/previous verse (voice commands) |
+| `display:update` | main → display | Send verse, blank, settings, or layout update |
 | `display:blank` | renderer → main | Blank / unblank the projection window |
+| `display:open` | renderer → main | Toggle the HDMI projection window |
+| `display:open-ndi` | renderer → main | Open / close the NDI virtual output window |
+| `display:layout` | renderer → main | Switch full-screen / lower-third per output |
+| `display:list-monitors` | renderer → main | List connected displays |
+| `display:set-monitor` | renderer → main | Move projection window to a specific display |
 | `session:create` | renderer → main | Start a new named session |
-| `session:log` | main (internal) | Log a displayed verse to the current session |
+| `session:active` | renderer → main | Get the currently active session |
 | `session:list` | renderer → main | Get all past sessions |
-| `settings:get` | renderer → main | Load settings from DB |
-| `settings:save` | renderer → main | Save settings to DB |
+| `session:verses` | renderer → main | Get verses logged in a session |
+| `settings:get` | renderer → main | Load all settings from DB |
+| `settings:save` | renderer → main | Save a single setting to DB |
+| `translations:list` | renderer → main | List installed translations |
+| `translations:available` | renderer → main | List downloadable translations |
+| `translations:download` | renderer → main | Download a translation from getbible.net |
+| `translations:import-file` | renderer → main | Import a JSON or XML translation file |
+| `translations:ready` | main → renderer | Notify UI that translations have been (re)loaded |
+| `whisper:transcribe` | renderer → main | Transcribe a Float32 audio chunk via Whisper AI |
+| `whisper:reset` | renderer → main | Clear the cached Whisper pipeline |
+| `whisper:set-gpu` | renderer → main | Open / close the WebGPU worker window |
+| `whisper:progress` | main → renderer | Whisper model download / load progress |
+| `scraper:open` | renderer → main | Open / focus the Bible Gateway scraper popup |
+| `scraper:check-python` | scraper → main | Detect Python 3 installation + version |
+| `scraper:start` | scraper → main | Start scraping a queue of translations |
+| `scraper:cancel` | scraper → main | Kill the active Python scrape process |
+| `scraper:progress` | main → scraper | Per-book progress + import result events |
+| `background:save-image` | renderer → main | Copy a background image to userData |
+| `system:hardware-info` | renderer → main | CPU / GPU info for the Settings panel |
+| `ai:summarize` | renderer → main | GPT-3.5 sermon summary (OpenAI) |
+| `updates:check` | renderer → main | Check GitHub releases for a newer version |
+| `updates:open-release` | renderer → main | Open the release download URL in the browser |
+| `nav:settings` | main → renderer | Navigate the operator panel to Settings view |
 
 ---
 
@@ -208,13 +262,15 @@ All renderer ↔ main communication goes through `preload.js` via `window.biblec
 
 | File | What it does |
 |---|---|
-| [main.js](main.js) | Main process — opens windows, registers all ipcMain handlers, manages DB lifecycle |
-| [preload.js](preload.js) | contextBridge — exposes `window.biblecast` typed API; no direct Node access in renderers |
-| [src/renderer/renderer.js](src/renderer/renderer.js) | Operator panel logic — verse search, push controls, session UI |
-| [src/display/display.js](src/display/display.js) | Projection window — receives `display:show` IPC, renders verse full-screen |
+| [main.js](main.js) | Main process — creates all windows, registers every ipcMain handler, manages DB lifecycle |
+| [preload.js](preload.js) | contextBridge — exposes `window.biblecast` typed API to all renderer windows |
+| [src/renderer/renderer.js](src/renderer/renderer.js) | Operator panel — verse search, push controls, session UI, Vosk/Whisper capture, settings |
+| [src/display/display.js](src/display/display.js) | Projection window — receives `display:update` IPC, renders verse full-screen or lower-third |
+| [src/scraper/scraper.js](src/scraper/scraper.js) | Bible Gateway scraper popup — Python detection, translation checklist, real-time progress |
+| [scripts/scrape_bible.py](scripts/scrape_bible.py) | Python scraper — uses `meaningless.WebExtractor` to scrape Bible Gateway chapter-by-chapter; outputs NDJSON |
 | [src/lib/db.js](src/lib/db.js) | SQLite setup, schema migration on first run, all query functions |
-| [src/lib/bible-parser.js](src/lib/bible-parser.js) | Parses scripture references from text input |
-| [electron-builder.json](electron-builder.json) | Build config — app ID, NSIS installer, icons, file exclusions |
+| [src/lib/bible-parser.js](src/lib/bible-parser.js) | Parses scripture references from typed or spoken text input |
+| [electron-builder.json](electron-builder.json) | Build config — app ID, NSIS installer, icons, extraResources (scrape_bible.py) |
 
 ---
 

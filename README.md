@@ -12,24 +12,50 @@ A desktop application for church presenters to search, select, and project Bible
 
 ## Features
 
+### Scripture
 - **Verse search** — Search by reference (`John 3:16`) or keyword (`grace`)
 - **One-click projection** — Push any verse to the full-screen display window instantly
-- **Multiple Bible translations** — Download 14+ free public-domain translations (KJV, ASV, WEB, YLT, BBE, and more) directly from the app
-- **Import custom translations** — Load any Bible translation from a JSON file
 - **Blank / unblank display** — Hide the screen between verses without closing the window
+- **Multiple Bible translations** — 14 free public-domain translations downloadable in-app (KJV, ASV, WEB, YLT, BBE, and more)
+- **Bible Gateway Scraper** — Download 29 additional translations (ESV, NIV, NASB, NKJV, NLT, AMP, CSB and more) via a built-in Python scraper
+- **Import custom translations** — Load any Bible from a JSON or XML file
+
+### Live Transcription & AI
+- **Vosk speech recognition** — Real-time offline transcription (word-by-word, ~45 MB model, no internet required)
+- **Whisper AI** — High-accuracy offline transcription via @xenova/transformers (CPU and GPU modes)
+- **Scripture auto-detection** — Detects spoken references (e.g. "John three sixteen") and suggests matching verses automatically
+- **Auto-projection** — Optionally push detected verses to the display without touching the keyboard
+- **Voice commands** — Control the display by speaking: "next verse", "clear screen", "repeat", etc.
+- **Sermon summary** — Keyword-based local summary or GPT-3.5 AI summary (requires OpenAI key)
+
+### Display & Output
+- **HDMI output** — Full-screen projection on a second monitor, auto-detected
+- **NDI virtual output** — Broadcast verses as a network video source (OBS / vMix compatible)
+- **Lower-third layout** — Full-screen or lower-third overlay mode per output
+- **Themes** — Dark, light, and royal blue projection themes
+- **Custom backgrounds** — Solid colour, gradient, or image background per output
+- **Font size control** — Adjustable text size for any venue
+- **Transition speed** — Configurable fade speed between verses
+
+### Sessions & History
 - **Session management** — Track each service as a named session; every projected verse is logged
 - **History** — Browse past sessions and all verses displayed in each service
-- **Display preview** — See exactly what's on the projection screen from the operator panel
-- **Themes** — Dark, light, and royal blue projection themes
-- **Font size control** — Adjustable text size for any venue
-- **Multi-monitor support** — Projection window automatically opens on the second connected display
-- **Fully offline** — No cloud account or internet connection required after translations are downloaded
+- **Display preview** — Live mirror of the projection screen in the operator panel
+- **Auto-session** — Optionally create a session automatically on launch
+
+### Application
+- **Multi-monitor support** — Projection window auto-placed on the second display
+- **GPU acceleration** — WebGPU-accelerated Whisper AI on supported hardware
+- **Fully offline** — No cloud account required; all core features work without internet
+- **Update checker** — Notifies when a new release is available on GitHub
 
 ---
 
-## Supported Translations
+## Translation Sources
 
-All downloadable translations are public domain or freely licensed:
+### Source 1 — getbible.net (in-app download, no setup)
+
+Free public-domain translations, downloaded directly from the app:
 
 | Abbreviation | Name | Language |
 |---|---|---|
@@ -48,7 +74,13 @@ All downloadable translations are public domain or freely licensed:
 | LUT | Luther Bibel (1912) | German |
 | ALMEIDA | Almeida Revista e Corrigida | Portuguese |
 
-> Copyrighted translations (NIV, ESV, NKJV, NLT) cannot be bundled. If you hold a licence, import them via **Settings → Import JSON File**.
+### Source 2 — Bible Gateway Scraper (requires Python 3)
+
+29 additional translations scraped via the built-in scraper (Settings → Bibles → Open Bible Gateway Scraper):
+
+`AMP` `AKJV` `ASV` `BRG` `CSB` `EHV` `ESV` `ESVUK` `GNV` `GW` `ISV` `JUB` `KJV` `KJ21` `LEB` `MEV` `NASB` `NASB1995` `NET` `NIV` `NIVUK` `NKJV` `NLT` `NLV` `NOG` `NRSV` `NRSVUE` `WEB` `YLT`
+
+> Translations marked © are copyrighted. Scrape for personal / local church use only.
 
 ---
 
@@ -56,11 +88,12 @@ All downloadable translations are public domain or freely licensed:
 
 ### Prerequisites
 
-| Tool | Version |
-|---|---|
-| Node.js | 20 LTS or later |
-| npm | 10+ |
-| Windows | 10 / 11 x64 |
+| Tool | Version | Notes |
+|---|---|---|
+| Node.js | 20 LTS or later | |
+| npm | 10+ | |
+| Windows | 10 / 11 x64 | |
+| Python 3 | 3.8+ | Optional — required for Bible Gateway Scraper only |
 
 ### Install
 
@@ -79,31 +112,15 @@ npm run rebuild
 npm start
 ```
 
-The app opens two windows:
-- **Operator panel** — your primary monitor (search, push, sessions)
-- **Projection window** — your second monitor (full-screen verse display)
+The app opens the operator panel on your primary monitor. The projection window is toggled from the **Outputs** tab in the right sidebar.
 
 ### Load Bible data
 
-On first launch you'll be prompted to go to **Settings**. From there:
+KJV is bundled and loads automatically on first launch. To add more:
 
-1. Click **↓ Download** next to any translation
-2. Wait a few seconds while it downloads (~3 MB per translation)
-3. Switch to the **Search** tab and start searching
-
-Or download all translations at once from the terminal:
-
-```bash
-npm run download
-```
-
-To download a specific translation:
-
-```bash
-npm run download:kjv
-# or
-node scripts/download-translations.js asv web ylt
-```
+1. Go to **Settings → Bibles**
+2. Click **↓ Download** next to any translation (getbible.net source)
+3. Or click **Open Bible Gateway Scraper…** for ESV, NIV, NASB, and 26 more (requires Python 3)
 
 ---
 
@@ -118,19 +135,27 @@ BibleCast/
 │   │   ├── index.html
 │   │   ├── renderer.js
 │   │   └── styles.css
-│   ├── display/             # Projection window (second monitor)
+│   ├── display/             # Projection window (second monitor / NDI)
 │   │   ├── display.html
 │   │   ├── display.js
 │   │   └── display.css
+│   ├── scraper/             # Bible Gateway scraper popup
+│   │   ├── scraper.html
+│   │   ├── scraper.js
+│   │   └── scraper.css
+│   ├── whisper/             # GPU worker window for Whisper AI
+│   │   ├── whisper-gpu.html
+│   │   └── whisper-gpu.js
 │   └── lib/
 │       ├── db.js            # SQLite schema + all query functions
 │       └── bible-parser.js  # Scripture reference parser
-├── data/
-│   └── sample-kjv.js        # Bundled sample verses (fallback)
 ├── scripts/
-│   ├── launch.js            # npm start wrapper (clears ELECTRON_RUN_AS_NODE)
+│   ├── launch.js            # npm start wrapper
+│   ├── scrape_bible.py      # Python Bible Gateway scraper (used by popup)
 │   ├── seed-db.js           # CLI seeder for local JSON files
 │   └── download-translations.js  # Downloads public domain translations
+├── data/
+│   └── translations/        # Bundled KJV JSON (auto-seeded on first launch)
 ├── assets/icons/            # App icons
 ├── electron-builder.json    # Build / installer config
 └── DEVELOPER.md             # Full developer guide
@@ -140,7 +165,7 @@ BibleCast/
 
 ## Import a Custom Translation
 
-BibleCast accepts any Bible in this JSON format:
+BibleCast accepts any Bible in flat JSON format:
 
 ```json
 [
@@ -149,13 +174,9 @@ BibleCast accepts any Bible in this JSON format:
 ]
 ```
 
-**Via the app:** Settings → Import JSON File → select your file.
+Also accepts **XML** (Holy Bible XML / OSIS / Zefania formats).
 
-**Via the CLI:**
-
-```bash
-node scripts/seed-db.js path/to/translation.json "Full Name" "ABBR" "Language"
-```
+**Via the app:** Settings → Bibles → Import JSON / XML File
 
 ---
 
@@ -165,7 +186,7 @@ node scripts/seed-db.js path/to/translation.json "Full Name" "ABBR" "Language"
 npm run build
 ```
 
-Produces a Windows NSIS installer at `dist/BibleCast Setup 1.0.0.exe`.
+Produces a Windows NSIS installer at `dist/BibleCast Setup 1.0.x.exe`.
 
 ---
 
@@ -177,14 +198,12 @@ Produces a Windows NSIS installer at `dist/BibleCast Setup 1.0.0.exe`.
 | UI | HTML / CSS / Vanilla JS |
 | Database | SQLite via better-sqlite3 |
 | IPC | Electron contextBridge + ipcMain/ipcRenderer |
-| Build | electron-builder |
-| Bible data source | [getbible.net](https://getbible.net) (public domain API) |
-
----
-
-## Contributing
-
-Pull requests are welcome. For major changes please open an issue first.
+| Speech (real-time) | Vosk via vosk-browser (WASM, fully offline) |
+| Speech (accurate) | Whisper AI via @xenova/transformers (CPU + WebGPU) |
+| Bible scraper | Python 3 + meaningless (Bible Gateway) |
+| Build | electron-builder (NSIS installer) |
+| Bible data — source 1 | getbible.net (public domain API) |
+| Bible data — source 2 | Bible Gateway via Python scraper |
 
 ---
 
