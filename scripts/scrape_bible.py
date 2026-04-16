@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 BibleCast — Bible Gateway Scraper
-Scrapes a single translation via the `meaningless` library.
-Outputs newline-delimited JSON to stdout so the Electron main process
-can stream progress in real time.
+Uses the `meaningless` library (WebExtractor) to download one translation.
+Outputs newline-delimited JSON to stdout for real-time Electron progress.
 
 Usage: python scrape_bible.py <ABBR>
   e.g. python scrape_bible.py NIV
@@ -11,6 +11,7 @@ Usage: python scrape_bible.py <ABBR>
 
 import sys
 import json
+import re
 import subprocess
 
 # ---------------------------------------------------------------------------
@@ -18,14 +19,14 @@ import subprocess
 # ---------------------------------------------------------------------------
 
 def emit(obj):
-    """Write a JSON object as one line to stdout and flush immediately."""
-    print(json.dumps(obj, ensure_ascii=False), flush=True)
+    line = json.dumps(obj, ensure_ascii=False)
+    sys.stdout.buffer.write((line + '\n').encode('utf-8'))
+    sys.stdout.buffer.flush()
 
 
 def ensure_meaningless():
-    """Install meaningless if it is not already available."""
     try:
-        import meaningless  # noqa: F401
+        from meaningless import WebExtractor  # noqa: F401
         return True
     except ImportError:
         emit({'type': 'status', 'msg': 'Installing meaningless package…'})
@@ -35,97 +36,87 @@ def ensure_meaningless():
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            emit({'type': 'status', 'msg': 'Package installed.'})
             return True
         except subprocess.CalledProcessError as exc:
             emit({'type': 'error', 'msg': f'pip install failed (exit {exc.returncode}). '
-                  'Please run: pip install meaningless'})
+                  'Please run manually: pip install meaningless'})
             return False
 
 
 # ---------------------------------------------------------------------------
-# Book list (canonical order, 66 books)
+# Superscript verse-number parser
 # ---------------------------------------------------------------------------
 
-BOOKS = [
-    'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
-    'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel',
-    '1 Kings', '2 Kings', '1 Chronicles', '2 Chronicles',
-    'Ezra', 'Nehemiah', 'Esther', 'Job', 'Psalms', 'Proverbs',
-    'Ecclesiastes', 'Song of Solomon', 'Isaiah', 'Jeremiah',
-    'Lamentations', 'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos',
-    'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah',
-    'Haggai', 'Zechariah', 'Malachi',
-    'Matthew', 'Mark', 'Luke', 'John', 'Acts', 'Romans',
-    '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians',
-    'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians',
-    '1 Timothy', '2 Timothy', 'Titus', 'Philemon', 'Hebrews',
-    'James', '1 Peter', '2 Peter', '1 John', '2 John', '3 John',
-    'Jude', 'Revelation',
-]
+# Unicode superscript → ASCII digit map
+_SUP = {'⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+        '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9'}
+_SUP_RE = re.compile(r'[⁰¹²³⁴⁵⁶⁷⁸⁹]+')
 
-# ---------------------------------------------------------------------------
-# Flatten whatever structure meaningless returns into our flat-array format
-# ---------------------------------------------------------------------------
 
-def flatten_book(book_name, raw):
+def _sup_to_int(s):
+    return int(''.join(_SUP[c] for c in s))
+
+
+def parse_chapter_string(raw_text):
     """
-    Convert a meaningless book result to a list of
-    {book, chapter, verse, text} dicts.
+    Convert a meaningless chapter string into {verse_num: text} dict.
 
-    Handles multiple possible return shapes:
-      - dict  {chap_str: {verse_str: text_str}}       — most common
-      - dict  {chap_str: [text1, text2, …]}            — older versions
-      - list  [{chapter, verse, text}, …]              — rare
+    The library omits the superscript marker on verse 1 — all text before
+    the first superscript run is verse 1.
     """
-    verses = []
+    verses = {}
+    # Split on superscript runs, keeping the delimiters
+    parts = _SUP_RE.split(raw_text)
+    markers = _SUP_RE.findall(raw_text)
 
-    if isinstance(raw, dict):
-        for chap_key, chap_val in raw.items():
-            try:
-                chap_num = int(chap_key)
-            except (ValueError, TypeError):
-                continue
+    # parts[0] is text before any marker → verse 1
+    v1 = parts[0].strip()
+    if v1:
+        verses[1] = v1
 
-            if isinstance(chap_val, dict):
-                for verse_key, text in chap_val.items():
-                    try:
-                        verse_num = int(verse_key)
-                    except (ValueError, TypeError):
-                        continue
-                    if text and isinstance(text, str):
-                        verses.append({
-                            'book': book_name,
-                            'chapter': chap_num,
-                            'verse': verse_num,
-                            'text': text.strip().replace('\n', ' '),
-                        })
-
-            elif isinstance(chap_val, list):
-                for v_idx, text in enumerate(chap_val, 1):
-                    if text and isinstance(text, str):
-                        verses.append({
-                            'book': book_name,
-                            'chapter': chap_num,
-                            'verse': v_idx,
-                            'text': text.strip().replace('\n', ' '),
-                        })
-
-    elif isinstance(raw, list):
-        for item in raw:
-            if isinstance(item, dict) and item.get('text'):
-                verses.append({
-                    'book': book_name,
-                    'chapter': int(item.get('chapter', 1)),
-                    'verse': int(item.get('verse', 1)),
-                    'text': str(item['text']).strip().replace('\n', ' '),
-                })
+    for i, marker in enumerate(markers):
+        verse_num = _sup_to_int(marker)
+        text = parts[i + 1].strip() if i + 1 < len(parts) else ''
+        if text:
+            verses[verse_num] = text
 
     return verses
 
 
 # ---------------------------------------------------------------------------
-# Main scrape routine
+# Chapter counts for all 66 canonical books
+# ---------------------------------------------------------------------------
+
+BOOKS = [
+    ('Genesis',          50), ('Exodus',           40), ('Leviticus',        27),
+    ('Numbers',          36), ('Deuteronomy',       34), ('Joshua',           24),
+    ('Judges',           21), ('Ruth',               4), ('1 Samuel',         31),
+    ('2 Samuel',         24), ('1 Kings',            22), ('2 Kings',          25),
+    ('1 Chronicles',     29), ('2 Chronicles',       36), ('Ezra',             10),
+    ('Nehemiah',         13), ('Esther',             10), ('Job',              42),
+    ('Psalms',          150), ('Proverbs',           31), ('Ecclesiastes',     12),
+    ('Song of Solomon',   8), ('Isaiah',             66), ('Jeremiah',         52),
+    ('Lamentations',      5), ('Ezekiel',            48), ('Daniel',           12),
+    ('Hosea',            14), ('Joel',                3), ('Amos',              9),
+    ('Obadiah',           1), ('Jonah',               4), ('Micah',             7),
+    ('Nahum',             3), ('Habakkuk',            3), ('Zephaniah',         3),
+    ('Haggai',            2), ('Zechariah',          14), ('Malachi',           4),
+    ('Matthew',          28), ('Mark',               16), ('Luke',             24),
+    ('John',             21), ('Acts',               28), ('Romans',           16),
+    ('1 Corinthians',    16), ('2 Corinthians',      13), ('Galatians',         6),
+    ('Ephesians',         6), ('Philippians',         4), ('Colossians',        4),
+    ('1 Thessalonians',   5), ('2 Thessalonians',     3), ('1 Timothy',         6),
+    ('2 Timothy',         4), ('Titus',               3), ('Philemon',          1),
+    ('Hebrews',          13), ('James',               5), ('1 Peter',           5),
+    ('2 Peter',           3), ('1 John',              5), ('2 John',            1),
+    ('3 John',            1), ('Jude',                1), ('Revelation',       22),
+]
+
+TOTAL_CHAPTERS = sum(c for _, c in BOOKS)  # 1189
+
+
+# ---------------------------------------------------------------------------
+# Main scrape
 # ---------------------------------------------------------------------------
 
 def scrape(abbr):
@@ -133,49 +124,60 @@ def scrape(abbr):
         sys.exit(1)
 
     try:
-        from meaningless import BibleGatewayExtractor
+        from meaningless import WebExtractor
     except ImportError:
-        emit({'type': 'error', 'msg': 'meaningless import failed after install attempt.'})
+        emit({'type': 'error', 'msg': 'Could not import meaningless after install.'})
         sys.exit(1)
 
     emit({'type': 'status', 'msg': f'Connecting to Bible Gateway ({abbr.upper()})…'})
 
     try:
-        extractor = BibleGatewayExtractor(
+        extractor = WebExtractor(
             translation=abbr.upper(),
-            show_passage_numbers=False,
-            show_verse_numbers=False,
+            show_passage_numbers=True,   # superscript verse numbers needed for parsing
         )
     except Exception as exc:
         emit({'type': 'error', 'msg': f'Could not create extractor: {exc}'})
         sys.exit(1)
 
     all_verses = []
-    total = len(BOOKS)
+    chapters_done = 0
+    book_index = 0
 
-    for idx, book in enumerate(BOOKS):
-        emit({'type': 'progress', 'book': book, 'done': idx, 'total': total})
+    for book, num_chapters in BOOKS:
+        emit({'type': 'progress', 'book': book, 'done': book_index, 'total': len(BOOKS)})
+        book_index += 1
 
-        try:
-            raw = extractor.get_book(book)
-            book_verses = flatten_book(book, raw)
-            all_verses.extend(book_verses)
-        except KeyboardInterrupt:
-            emit({'type': 'error', 'msg': 'Cancelled.'})
-            sys.exit(130)
-        except Exception as exc:
-            emit({'type': 'warning', 'book': book, 'msg': str(exc)})
+        for chap in range(1, num_chapters + 1):
+            try:
+                raw = extractor.get_chapter(book, chap)
+                parsed = parse_chapter_string(raw)
+                for verse_num, text in sorted(parsed.items()):
+                    if text:
+                        all_verses.append({
+                            'book':    book,
+                            'chapter': chap,
+                            'verse':   verse_num,
+                            'text':    text,
+                        })
+            except KeyboardInterrupt:
+                emit({'type': 'error', 'msg': 'Cancelled.'})
+                sys.exit(130)
+            except Exception as exc:
+                emit({'type': 'warning', 'book': book,
+                      'msg': f'Ch.{chap}: {exc}'})
+
+            chapters_done += 1
 
     emit({'type': 'done', 'count': len(all_verses), 'verses': all_verses})
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Entry
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         emit({'type': 'error', 'msg': 'Usage: scrape_bible.py <TRANSLATION_ABBR>'})
         sys.exit(1)
-
     scrape(sys.argv[1].strip())
