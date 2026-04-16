@@ -41,6 +41,8 @@ Update this file after every development session or task.
 
 ## Session: Prior (v1.0.1 and earlier)
 
+> Detailed implementation notes moved here from README / DEVELOPER.md for reference.
+
 ### Vosk Real-Time Speech Recognition
 - Replaced Web Speech API (broken in Electron) with Vosk via `vosk-browser` WASM
 - Added `startVoskCapture()` / `stopVoskCapture()` in `renderer.js`
