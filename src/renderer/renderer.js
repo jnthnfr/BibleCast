@@ -1091,7 +1091,7 @@ function onSearchInput() {
   searchTimeout = setTimeout(doSearch, 300);
 }
 
-async function doSearch() {
+async function doSearch(projectFirst = false) {
   const query       = document.getElementById('search-input')?.value.trim();
   const translation = document.getElementById('translation-select')?.value;
   const list        = document.getElementById('results-list');
@@ -1119,7 +1119,7 @@ async function doSearch() {
   }
 
   list.innerHTML = '';
-  results.forEach((v) => {
+  results.forEach((v, idx) => {
     const item = document.createElement('div');
     item.className = 'result-item';
     item.innerHTML = `
@@ -1132,7 +1132,14 @@ async function doSearch() {
       selectVerse(v, item);
     });
     list.appendChild(item);
+    // Auto-select first result visually when projecting
+    if (projectFirst && idx === 0) item.classList.add('selected');
   });
+
+  if (projectFirst) {
+    selectVerse(results[0], null);
+    await pushVerse();
+  }
 }
 
 function selectVerse(verse, _el) {
@@ -1678,7 +1685,7 @@ function bindEvents() {
       document.getElementById('search-autocomplete').style.display = 'none';
     } else if (e.key === 'Enter') {
       document.getElementById('search-autocomplete').style.display = 'none';
-      doSearch();
+      doSearch(true);
     }
   });
   document.getElementById('search-input')?.addEventListener('blur', () => {

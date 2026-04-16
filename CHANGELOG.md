@@ -5,6 +5,13 @@ Update this file after every development session or task.
 
 ---
 
+## v1.1.3 — 2026-04-16
+
+### Improvement
+- **Enter to project** — pressing Enter in the manual search box now searches and immediately projects the top result; first result is highlighted as selected in the list
+
+---
+
 ## v1.1.2 — 2026-04-16
 
 ### Improvement
