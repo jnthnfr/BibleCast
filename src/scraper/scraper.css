@@ -190,7 +190,7 @@ html, body {
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--primary);
-  min-width: 72px;
+  min-width: 88px;
 }
 
 .tl-name {

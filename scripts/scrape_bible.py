@@ -57,6 +57,20 @@ def _sup_to_int(s):
     return int(''.join(_SUP[c] for c in s))
 
 
+def _clean_verse(text):
+    """
+    Clean scraped verse text:
+    - Remove inline footnote markers like [a], [b], [c], [1], [2]
+    - Collapse multiple whitespace / newlines into single spaces
+    - Strip leading and trailing whitespace
+    """
+    # Remove footnote markers: [a], [b], [1], [2] etc.
+    text = re.sub(r'\[[a-zA-Z0-9]\]', '', text)
+    # Collapse all whitespace (including newlines) into single space
+    text = ' '.join(text.split())
+    return text.strip()
+
+
 def parse_chapter_string(raw_text):
     """
     Convert a meaningless chapter string into {verse_num: text} dict.
@@ -70,13 +84,13 @@ def parse_chapter_string(raw_text):
     markers = _SUP_RE.findall(raw_text)
 
     # parts[0] is text before any marker → verse 1
-    v1 = parts[0].strip()
+    v1 = _clean_verse(parts[0])
     if v1:
         verses[1] = v1
 
     for i, marker in enumerate(markers):
         verse_num = _sup_to_int(marker)
-        text = parts[i + 1].strip() if i + 1 < len(parts) else ''
+        text = _clean_verse(parts[i + 1]) if i + 1 < len(parts) else ''
         if text:
             verses[verse_num] = text
 

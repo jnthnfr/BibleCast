@@ -90,6 +90,9 @@ async function checkPython() {
 
 function renderList() {
   const container = document.getElementById('translation-list');
+  const countLbl  = document.getElementById('list-count-lbl');
+  const available = TRANSLATIONS.filter(t => !installedSet.has(t.abbr.toUpperCase()));
+  if (countLbl) countLbl.textContent = `Available Translations (${TRANSLATIONS.length})`;
   container.innerHTML = TRANSLATIONS.map(t => {
     const installed = installedSet.has(t.abbr.toUpperCase());
     return `
