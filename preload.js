@@ -121,11 +121,17 @@ contextBridge.exposeInMainWorld('biblecast', {
   checkForUpdates: () =>
     ipcRenderer.invoke('updates:check'),
 
+  downloadUpdate: () =>
+    ipcRenderer.invoke('updates:download'),
+
+  installUpdate: () =>
+    ipcRenderer.invoke('updates:install'),
+
   openRelease: (url) =>
     ipcRenderer.invoke('updates:open-release', url),
 
-  onUpdateAvailable: (callback) =>
-    ipcRenderer.on('update:available', (_event, data) => callback(data)),
+  onUpdaterEvent: (callback) =>
+    ipcRenderer.on('updater:event', (_event, data) => callback(data)),
 
   // --- Vosk model ---
   readVoskModel: () =>
