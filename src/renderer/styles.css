@@ -955,8 +955,10 @@ input[type=number]:focus,
 .history-text { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; line-height: 1.45; }
 
 /* ── Display Preview view ────────────────────────── */
-#view-display-preview { overflow: hidden; }
-#view-display-preview .view-hdr { border-bottom: 1px solid var(--border); }
+#view-display-preview {
+  overflow: hidden;
+  flex-direction: column;
+}
 
 .display-preview-large {
   flex: 1;
@@ -1221,13 +1223,17 @@ input[type=number]:focus,
   max-height: 100%;
   background: #000;
   border-radius: 3px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
   flex-shrink: 0;
   position: relative;
+  /* Children (_proj-surface) are absolutely positioned and CSS-scaled */
+}
+
+.preview-canvas ._proj-surface {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: top left;
+  /* width/height are set to PROJ_W × PROJ_H in JS */
 }
 
 /* Larger canvas in the Display Preview nav view */

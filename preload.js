@@ -63,6 +63,12 @@ contextBridge.exposeInMainWorld('biblecast', {
   openNdiDisplay: (open) =>
     ipcRenderer.invoke('display:open-ndi', open),
 
+  openHdmiMirror: (open) =>
+    ipcRenderer.invoke('display:open-hdmi-mirror', open),
+
+  onHdmiMirrorClosed: (callback) =>
+    ipcRenderer.on('hdmi-mirror:closed', () => callback()),
+
   sendDisplayLayout: (data) =>
     ipcRenderer.invoke('display:layout', data),
 

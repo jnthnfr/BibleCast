@@ -4,6 +4,7 @@ const api = window.biblecast;
 
 let showReference   = true;
 let showTranslation = true;
+let autoFitEnabled  = true;
 
 async function init() {
   // Load display state (current verse / visibility)
@@ -23,6 +24,11 @@ async function init() {
     bg_gradient_start: settings.bg_gradient_start  || '#0a1628',
     bg_gradient_end:   settings.bg_gradient_end    || '#1a3a5c',
     bg_image_url:      settings.bg_image_url       || '',
+    font_family:       settings.font_family        || 'Georgia, serif',
+    custom_font_family:settings.custom_font_family || '',
+    auto_fit_text:     settings.auto_fit_text,
+    ref_color:         settings.ref_color,
+    ref_size_ratio:    settings.ref_size_ratio,
   });
   applyLayout(settings.hdmi_layout || 'full');
 
@@ -65,6 +71,11 @@ function handleUpdate(data) {
       bg_gradient_start: data.bgGradientStart,
       bg_gradient_end:   data.bgGradientEnd,
       bg_image_url:      data.bgImageUrl,
+      font_family:       data.fontFamily,
+      custom_font_family:data.customFontFamily,
+      auto_fit_text:     data.autoFitText,
+      ref_color:         data.refColor,
+      ref_size_ratio:    data.refSizeRatio,
     });
   }
 }
@@ -83,6 +94,33 @@ function renderVerse(reference, text, translation) {
     <div class="verse-text">${escapeHtml(text)}</div>
     ${badgeHtml}
   `;
+
+  if (autoFitEnabled) autoFitText();
+}
+
+function autoFitText() {
+  const root      = document.documentElement;
+  const container = document.getElementById('verse-container');
+  if (!container) return;
+
+  // Allow text to fill 70% of screen height — matches the operator preview exactly.
+  const maxH   = window.innerHeight * 0.70;
+  const MIN_PX = 20;
+  const MAX_PX = 400;
+  let lo = MIN_PX, hi = MAX_PX, best = MIN_PX;
+
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    root.style.setProperty('--font-size', mid + 'px');
+    if (container.scrollHeight <= maxH) {
+      best = mid;
+      lo   = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  root.style.setProperty('--font-size', best + 'px');
 }
 
 function setBlank(blank) {
@@ -96,8 +134,25 @@ function applySettings(s) {
     root.style.setProperty('--font-size', parseInt(s.font_size) + 'px');
   }
 
+  if (s.font_family) {
+    if (s.font_family === 'custom') {
+      if (s.custom_font_family) root.style.setProperty('--font-family', `"${s.custom_font_family}"`);
+    } else {
+      root.style.setProperty('--font-family', s.font_family);
+    }
+  }
+
   if (s.text_color) {
     root.style.setProperty('--text-color', s.text_color);
+  }
+
+  if (s.ref_color) {
+    root.style.setProperty('--ref-color', s.ref_color);
+  }
+
+  if (s.ref_size_ratio != null) {
+    const ratio = parseFloat(s.ref_size_ratio) || 0.45;
+    root.style.setProperty('--ref-size-ratio', ratio);
   }
 
   if (s.transition_speed != null) {
@@ -111,6 +166,7 @@ function applySettings(s) {
 
   if (s.show_reference  != null) showReference   = s.show_reference  !== false && s.show_reference  !== 'false';
   if (s.show_translation != null) showTranslation = s.show_translation !== false && s.show_translation !== 'false';
+  if (s.auto_fit_text   != null) autoFitEnabled  = s.auto_fit_text   !== false && s.auto_fit_text   !== 'false';
 
   // Background
   if (s.bg_type === 'solid' && s.bg_color) {
@@ -137,4 +193,5 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+window.addEventListener('resize', () => { if (autoFitEnabled) autoFitText(); });
 document.addEventListener('DOMContentLoaded', init);
