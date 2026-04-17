@@ -1,6 +1,6 @@
 # BibleCast
 
-Desktop app for church presenters to search and project Bible verses onto a second screen during preaching.
+A desktop app for church presenters that combines manual verse search with live sermon listening, automatically detecting spoken Bible verse references in real time and displaying the full verse text on a second screen. Operators can also search and push any verse to the display manually, giving full control whether the system catches a reference automatically or the presenter needs to queue one up on the fly.
 
 ---
 
