@@ -1465,6 +1465,7 @@ function formatRef(v) {
 async function pushVerse() {
   if (!selectedVerse) return;
   isBlank = false;
+  _lastSyncKey = null; // force next sync to re-check state
 
   // Auto-open display window if it isn't already open
   if (!displayWindowOpen) {
@@ -1488,6 +1489,7 @@ async function pushVerse() {
 
 async function toggleBlank() {
   isBlank = !isBlank;
+  _lastSyncKey = null;
   await api.blankDisplay(isBlank);
   updateBlankBtn(isBlank);
   updateLiveBadge(!isBlank && !!selectedVerse);
@@ -1532,6 +1534,9 @@ function syncDisplayPreviewLarge(verse) {
   renderProjectionPreview(canvas, v || null, isBlank);
 }
 
+// Tracks last state synced to live canvas — prevents unnecessary re-renders
+let _lastSyncKey = null;
+
 async function syncDisplayState() {
   const state = await api.getDisplayState();
   if (!state) return;
@@ -1550,6 +1555,12 @@ async function syncDisplayState() {
       ? `Projecting: ${state.current_reference || ''}`
       : 'Standby';
   }
+
+  // Only re-render the canvas if the content actually changed — prevents the
+  // fadeInPrev animation from firing every 5 seconds on an unchanged slide.
+  const syncKey = `${visible}|${state.current_text || ''}|${state.current_reference || ''}`;
+  if (syncKey === _lastSyncKey) return;
+  _lastSyncKey = syncKey;
 
   if (state.current_text) {
     const canvas = document.getElementById('live-canvas');
@@ -1700,7 +1711,11 @@ async function loadAllSettings() {
   if (themeEl && s.theme) themeEl.value = s.theme;
 
   const fontEl = document.getElementById('setting-font-size');
-  if (fontEl && s.font_size) fontEl.value = s.font_size;
+  if (fontEl && s.font_size) {
+    fontEl.value = s.font_size;
+    const fontLbl = document.getElementById('display-font-size-val');
+    if (fontLbl) fontLbl.textContent = s.font_size + 'px';
+  }
 
   const colorEl = document.getElementById('setting-text-color');
   if (colorEl && s.text_color) colorEl.value = s.text_color;
@@ -2061,6 +2076,10 @@ function bindEvents() {
   document.getElementById('reset-ref-color-btn')?.addEventListener('click', () => {
     const el = document.getElementById('setting-ref-color');
     if (el) el.value = '#e8c97a';
+  });
+  document.getElementById('setting-font-size')?.addEventListener('input', e => {
+    const lbl = document.getElementById('display-font-size-val');
+    if (lbl) lbl.textContent = e.target.value + 'px';
   });
   document.getElementById('setting-ref-size')?.addEventListener('input', e => {
     const lbl = document.getElementById('ref-size-val');

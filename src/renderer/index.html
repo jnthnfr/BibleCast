@@ -248,14 +248,15 @@
               <option value="blue">Royal Blue</option>
             </select>
 
-            <div class="rs-field-lbl">FONT SIZE</div>
-            <select id="setting-font-size" class="rs-dropdown">
-              <option value="36">Small</option>
-              <option value="48">Medium</option>
-              <option value="64" selected>Large</option>
-              <option value="80">Extra Large</option>
-              <option value="100">Huge</option>
-            </select>
+            <div class="rs-field-lbl-row">
+              <span class="rs-field-lbl" style="margin:0">FONT SIZE</span>
+              <span id="display-font-size-val" class="rs-field-val">64px</span>
+            </div>
+            <input type="range" id="setting-font-size" min="24" max="200" step="2" value="64" class="full-slider" />
+            <div class="slider-range-labels">
+              <span>24px</span>
+              <span>200px</span>
+            </div>
 
             <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;margin-bottom:4px">
               <div>
