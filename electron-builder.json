@@ -5,6 +5,11 @@
   "directories": {
     "output": "dist"
   },
+  "publish": {
+    "provider": "github",
+    "owner": "jnthnfr",
+    "repo": "BibleCast"
+  },
   "files": [
     "main.js",
     "preload.js",

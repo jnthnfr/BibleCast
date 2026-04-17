@@ -990,75 +990,63 @@ function registerIpcHandlers() {
     }
   });
 
-  // ── Update checker ───────────────────────────────────────────────────────────
-  const GITHUB_OWNER = 'jnthnfr';
-  const GITHUB_REPO  = 'BibleCast';
+  // ── Auto-updater (electron-updater → GitHub Releases) ───────────────
+  const { autoUpdater } = require('electron-updater');
 
+  // Silence the built-in logger; forward events to the renderer instead
+  autoUpdater.logger          = null;
+  autoUpdater.autoDownload    = false; // ask the user before downloading
+  autoUpdater.autoInstallOnAppQuit = true; // install silently when app quits
+
+  function sendUpdateMsg(event, payload) {
+    if (operatorWindow && !operatorWindow.isDestroyed()) {
+      operatorWindow.webContents.send('updater:event', { event, ...payload });
+    }
+  }
+
+  autoUpdater.on('checking-for-update',  ()     => sendUpdateMsg('checking'));
+  autoUpdater.on('update-not-available', (info) => sendUpdateMsg('not-available', { version: info.version }));
+  autoUpdater.on('update-available',     (info) => sendUpdateMsg('available',     { version: info.version }));
+  autoUpdater.on('error',                (err)  => sendUpdateMsg('error',         { message: err.message }));
+  autoUpdater.on('download-progress',    (p)    => sendUpdateMsg('progress',      { percent: Math.round(p.percent), transferred: p.transferred, total: p.total }));
+  autoUpdater.on('update-downloaded',    (info) => sendUpdateMsg('downloaded',    { version: info.version }));
+
+  // IPC: manual check triggered by "Check for Updates" button
   ipcMain.handle('updates:check', async () => {
-    const https = require('https');
-    function httpGetUpdate(url) {
-      return new Promise((resolve, reject) => {
-        const req = https.get(url, {
-          headers: { 'User-Agent': `BibleCast/${app.getVersion()}`, Accept: 'application/vnd.github+json' }
-        }, res => {
-          if (res.statusCode === 301 || res.statusCode === 302)
-            return httpGetUpdate(res.headers.location).then(resolve).catch(reject);
-          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-          let data = '';
-          res.setEncoding('utf-8');
-          res.on('data', c => { data += c; });
-          res.on('end',  () => resolve(data));
-        });
-        req.on('error', reject);
-        req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timed out')); });
-      });
-    }
-
-    function semverGt(a, b) {
-      const pa = a.split('.').map(Number);
-      const pb = b.split('.').map(Number);
-      for (let i = 0; i < 3; i++) {
-        if ((pa[i] || 0) > (pb[i] || 0)) return true;
-        if ((pa[i] || 0) < (pb[i] || 0)) return false;
-      }
-      return false;
-    }
-
     try {
-      const raw     = await httpGetUpdate(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`);
-      const release = JSON.parse(raw);
-      const latest  = (release.tag_name || '').replace(/^v/, '');
-      const current = app.getVersion();
-      const updateAvailable = !!latest && semverGt(latest, current);
-      const exeAsset = (release.assets || []).find(a => a.name.endsWith('.exe'));
-      return {
-        ok: true,
-        updateAvailable,
-        currentVersion:  current,
-        latestVersion:   latest,
-        releaseUrl:      release.html_url || '',
-        downloadUrl:     exeAsset?.browser_download_url || release.html_url || '',
-        releaseName:     release.name || `v${latest}`,
-        publishedAt:     release.published_at || '',
-      };
+      await autoUpdater.checkForUpdates();
+      return { ok: true, currentVersion: app.getVersion() };
     } catch (err) {
       return { ok: false, error: err.message };
     }
   });
 
-  // ── Vosk model ───────────────────────────────────────────────────────────────
-  ipcMain.handle('vosk:read-model', () => {
-    const modelPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'vosk', 'vosk-model-small-en-us-0.15.tar.gz')
-      : path.join(__dirname, 'assets', 'vosk', 'vosk-model-small-en-us-0.15.tar.gz');
-    return fs.readFileSync(modelPath); // returned as Buffer → Uint8Array in renderer
+  // IPC: user confirmed — start downloading
+  ipcMain.handle('updates:download', async () => {
+    try {
+      await autoUpdater.downloadUpdate();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   });
 
+  // IPC: quit and install immediately
+  ipcMain.handle('updates:install', () => {
+    autoUpdater.quitAndInstall(false, true);
+  });
+
+  // IPC: open release page in browser (fallback)
   ipcMain.handle('updates:open-release', (_event, url) => {
     const { shell } = require('electron');
     shell.openExternal(url);
     return { ok: true };
   });
+
+  // Auto-check 10 s after launch (packaged builds only)
+  if (app.isPackaged) {
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 10000);
+  }
 
   // Next / previous verse navigation (for voice commands)
   // ── Bible Gateway Scraper ────────────────────────────────────────────────────

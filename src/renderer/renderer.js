@@ -289,6 +289,7 @@ async function init() {
   initResizeSplitters();
   bindEvents();
   initSpeechRecognition();
+  initUpdaterEvents();
   await loadMicrophones();
   await loadMonitors();
 
@@ -304,9 +305,6 @@ async function init() {
     await api.createSession(name);
     await loadSessions();
   }
-
-  // Check for updates 8 seconds after launch (non-blocking)
-  setTimeout(checkForUpdates, 8000);
 
   // Rescale preview canvases whenever their container size changes
   const rescaleObserver = new ResizeObserver(() => rescaleAllPreviews());
@@ -2357,30 +2355,71 @@ async function checkForUpdates() {
   if (statusEl) statusEl.textContent = 'Checking…';
   try {
     const result = await api.checkForUpdates();
-    updateInfo = result;
-    if (!result.ok) {
-      if (statusEl) statusEl.textContent = 'Check failed';
-      return;
-    }
-    if (statusEl) {
-      statusEl.textContent = result.updateAvailable
-        ? `v${result.latestVersion} available`
-        : `Up to date (v${result.currentVersion})`;
-    }
-    if (result.updateAvailable) showUpdateBanner(result);
+    if (!result.ok && statusEl) statusEl.textContent = 'Check failed';
   } catch (e) {
-    if (statusEl) statusEl.textContent = 'Check failed';
+    if (statusEl) document.getElementById('update-status-text').textContent = 'Check failed';
   }
 }
 
-function showUpdateBanner(info) {
-  const banner = document.getElementById('update-banner');
-  const text   = document.getElementById('update-banner-text');
-  if (!banner) return;
-  text.textContent = `BibleCast v${info.latestVersion} is available — you have v${info.currentVersion}`;
-  banner.style.display = 'flex';
-  document.getElementById('update-download-btn').onclick = () => api.openRelease(info.downloadUrl);
-  document.getElementById('update-dismiss-btn').onclick  = () => { banner.style.display = 'none'; };
+// ── electron-updater event handler ────────────────────────────────────────────
+
+function initUpdaterEvents() {
+  api.onUpdaterEvent(data => {
+    const statusEl  = document.getElementById('update-status-text');
+    const banner    = document.getElementById('update-banner');
+    const bannerTxt = document.getElementById('update-banner-text');
+    const dlBtn     = document.getElementById('update-download-btn');
+    const dismissBtn = document.getElementById('update-dismiss-btn');
+
+    switch (data.event) {
+      case 'checking':
+        if (statusEl) statusEl.textContent = 'Checking…';
+        break;
+
+      case 'not-available':
+        if (statusEl) statusEl.textContent = `Up to date (v${data.version})`;
+        break;
+
+      case 'available':
+        if (statusEl) statusEl.textContent = `v${data.version} available`;
+        if (banner && bannerTxt) {
+          bannerTxt.textContent = `BibleCast v${data.version} is available — click to download`;
+          banner.style.display = 'flex';
+          // "Download" button starts background download
+          if (dlBtn) dlBtn.onclick = async () => {
+            dlBtn.textContent = 'Downloading…';
+            dlBtn.disabled = true;
+            await api.downloadUpdate();
+          };
+          if (dismissBtn) dismissBtn.onclick = () => { banner.style.display = 'none'; };
+        }
+        break;
+
+      case 'progress': {
+        if (dlBtn) dlBtn.textContent = `Downloading… ${data.percent}%`;
+        if (statusEl) statusEl.textContent = `Downloading ${data.percent}%`;
+        break;
+      }
+
+      case 'downloaded':
+        if (statusEl) statusEl.textContent = `v${data.version} ready — restart to install`;
+        if (banner && bannerTxt) {
+          bannerTxt.textContent = `v${data.version} downloaded — restart BibleCast to install`;
+          banner.style.display = 'flex';
+          if (dlBtn) {
+            dlBtn.textContent = 'Restart & Install';
+            dlBtn.disabled = false;
+            dlBtn.onclick = () => api.installUpdate();
+          }
+        }
+        break;
+
+      case 'error':
+        if (statusEl) statusEl.textContent = 'Update check failed';
+        console.warn('[updater]', data.message);
+        break;
+    }
+  });
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
