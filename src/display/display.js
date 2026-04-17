@@ -99,14 +99,19 @@ function renderVerse(reference, text, translation) {
 }
 
 function autoFitText() {
-  const root      = document.documentElement;
-  const container = document.getElementById('verse-container');
+  const root         = document.documentElement;
+  const container    = document.getElementById('verse-container');
   if (!container) return;
 
-  // Allow text to fill 70% of screen height — matches the operator preview exactly.
-  const maxH   = window.innerHeight * 0.70;
+  const isLowerThird = document.body.classList.contains('layout-lower-third');
+
+  // Fullscreen: fill up to 70% of screen height.
+  // Lower-third: bar should occupy at most 30% of screen height — it's a
+  // banner, not a full-screen slide. The CSS scales verse text to 0.62×
+  // --font-size so container.scrollHeight already reflects that correctly.
+  const maxH   = window.innerHeight * (isLowerThird ? 0.30 : 0.70);
   const MIN_PX = 20;
-  const MAX_PX = 400;
+  const MAX_PX = isLowerThird ? 200 : 400; // lower cap for lower-third
   let lo = MIN_PX, hi = MAX_PX, best = MIN_PX;
 
   while (lo <= hi) {
@@ -182,6 +187,7 @@ function applySettings(s) {
 
 function applyLayout(layout) {
   document.body.classList.toggle('layout-lower-third', layout === 'lower-third');
+  if (autoFitEnabled) autoFitText();
 }
 
 function escapeHtml(str) {
