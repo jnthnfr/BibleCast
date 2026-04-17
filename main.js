@@ -95,6 +95,7 @@ function parseXmlBible(xmlStr) {
 let operatorWindow    = null;
 let displayWindow     = null;
 let ndiWindow         = null;
+let hdmiMirrorWindow  = null;
 let gpuWorkerWindow   = null;
 let scraperWindow     = null;
 let pendingGpuResolve = null;
@@ -139,7 +140,10 @@ function createOperatorWindow() {
     operatorWindow.webContents.openDevTools();
   }
 
-  operatorWindow.on('closed', () => { operatorWindow = null; });
+  operatorWindow.on('closed', () => { 
+    operatorWindow = null; 
+    app.quit();
+  });
 }
 
 function createDisplayWindow() {
@@ -152,8 +156,10 @@ function createDisplayWindow() {
 
   displayWindow = new BrowserWindow({
     x, y, width, height,
-    fullscreen: displays.length > 1,
-    frame: false,
+    fullscreen: true,      // always fullscreen — no dragging, no window chrome
+    movable:    false,
+    resizable:  false,
+    frame:      false,
     title: 'BibleCast — Display',
     backgroundColor: '#000000',
     webPreferences: {
@@ -200,6 +206,40 @@ function createNdiWindow() {
   ndiWindow.on('closed', () => { ndiWindow = null; });
 }
 
+function createHdmiMirrorWindow() {
+  // Opens on the secondary monitor if available; falls back to primary.
+  // Fullscreen so it exactly mirrors the live-output canvas 1:1.
+  const displays      = screen.getAllDisplays();
+  const targetDisplay = displays.length > 1
+    ? displays.find(d => d.id !== screen.getPrimaryDisplay().id) || displays[0]
+    : displays[0];
+
+  const { x, y, width, height } = targetDisplay.bounds;
+
+  hdmiMirrorWindow = new BrowserWindow({
+    x, y, width, height,
+    fullscreen: true,
+    movable:    false,
+    resizable:  false,
+    frame:      false,
+    title: 'BibleCast — HDMI Mirror',
+    backgroundColor: '#000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  hdmiMirrorWindow.loadFile('src/display/display.html');
+  hdmiMirrorWindow.on('closed', () => {
+    hdmiMirrorWindow = null;
+    if (operatorWindow && !operatorWindow.isDestroyed()) {
+      operatorWindow.webContents.send('hdmi-mirror:closed');
+    }
+  });
+}
+
 function createGpuWorkerWindow() {
   gpuWorkerWindow = new BrowserWindow({
     show: false,
@@ -207,7 +247,8 @@ function createGpuWorkerWindow() {
     height: 1,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'src', 'whisper', 'whisper-gpu-preload.js'),
     },
   });
   gpuWorkerWindow.loadFile('src/whisper/whisper-gpu.html');
@@ -270,7 +311,7 @@ app.whenReady().then(() => {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self'; " +
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; " +
+          "script-src 'self' blob:; " +
           "worker-src blob: data:; " +
           "style-src 'self' 'unsafe-inline'; " +
           "connect-src 'self' blob: data: https://*.githubusercontent.com; " +
@@ -294,9 +335,10 @@ app.whenReady().then(() => {
 
 // Closing the operator window tears down all output windows and quits
 app.on('window-all-closed', () => {
-  if (displayWindow)   { displayWindow.destroy();   displayWindow  = null; }
-  if (ndiWindow)       { ndiWindow.destroy();        ndiWindow      = null; }
-  if (gpuWorkerWindow) { gpuWorkerWindow.destroy();  gpuWorkerWindow = null; }
+  if (displayWindow)    { displayWindow.destroy();    displayWindow    = null; }
+  if (ndiWindow)        { ndiWindow.destroy();         ndiWindow        = null; }
+  if (hdmiMirrorWindow) { hdmiMirrorWindow.destroy();  hdmiMirrorWindow = null; }
+  if (gpuWorkerWindow)  { gpuWorkerWindow.destroy();   gpuWorkerWindow  = null; }
   getDb().closeDb();
   app.quit();
 });
@@ -383,8 +425,9 @@ function registerIpcHandlers() {
       translation: verse.translation || 'KJV',
       visible:     true,
     };
-    if (displayWindow) displayWindow.webContents.send('display:update', verseMsg);
-    if (ndiWindow)     ndiWindow.webContents.send('display:update', verseMsg);
+    if (displayWindow)    displayWindow.webContents.send('display:update', verseMsg);
+    if (ndiWindow)        ndiWindow.webContents.send('display:update', verseMsg);
+    if (hdmiMirrorWindow) hdmiMirrorWindow.webContents.send('display:update', verseMsg);
 
     // Log to active session
     const sess = getDb().getActiveSession();
@@ -408,8 +451,9 @@ function registerIpcHandlers() {
     getDb().updateDisplayState({ is_visible: blank ? 0 : 1 });
 
     const blankMsg = { type: 'blank', visible: !blank };
-    if (displayWindow) displayWindow.webContents.send('display:update', blankMsg);
-    if (ndiWindow)     ndiWindow.webContents.send('display:update', blankMsg);
+    if (displayWindow)    displayWindow.webContents.send('display:update', blankMsg);
+    if (ndiWindow)        ndiWindow.webContents.send('display:update', blankMsg);
+    if (hdmiMirrorWindow) hdmiMirrorWindow.webContents.send('display:update', blankMsg);
 
     return { ok: true };
   });
@@ -431,10 +475,10 @@ function registerIpcHandlers() {
   ipcMain.handle('settings:save', (_event, { key, value }) => {
     getDb().setSetting(key, value);
 
-    // Propagate display-affecting settings to display windows immediately
     const displayKeys = [
       'font_size','theme','text_color','transition_speed','show_translation','show_reference',
       'bg_type','bg_color','bg_gradient_start','bg_gradient_end','bg_image_url',
+      'font_family','custom_font_family','auto_fit_text','ref_color','ref_size_ratio',
     ];
     if (displayKeys.includes(key)) {
       const s = getDb().getAllSettings();
@@ -451,9 +495,15 @@ function registerIpcHandlers() {
         bgGradientStart:  s.bg_gradient_start  || '#0a1628',
         bgGradientEnd:    s.bg_gradient_end    || '#1a3a5c',
         bgImageUrl:       s.bg_image_url       || '',
+        fontFamily:       s.font_family        || 'Georgia, serif',
+        customFontFamily: s.custom_font_family || '',
+        autoFitText:      s.auto_fit_text      !== 'false',
+        refColor:         s.ref_color          || '',
+        refSizeRatio:     parseFloat(s.ref_size_ratio) || 0.45,
       };
-      if (displayWindow) displayWindow.webContents.send('display:update', settingsMsg);
-      if (ndiWindow)     ndiWindow.webContents.send('display:update', settingsMsg);
+      if (displayWindow)    displayWindow.webContents.send('display:update', settingsMsg);
+      if (ndiWindow)        ndiWindow.webContents.send('display:update', settingsMsg);
+      if (hdmiMirrorWindow) hdmiMirrorWindow.webContents.send('display:update', settingsMsg);
     }
     return { ok: true };
   });
@@ -724,6 +774,50 @@ function registerIpcHandlers() {
       }
     } else {
       if (ndiWindow) { ndiWindow.destroy(); ndiWindow = null; }
+    }
+    return { ok: true };
+  });
+
+  // Open / close HDMI Mirror window (Display Settings pane toggle)
+  ipcMain.handle('display:open-hdmi-mirror', (_event, open) => {
+    if (open) {
+      if (!hdmiMirrorWindow) {
+        createHdmiMirrorWindow();
+        hdmiMirrorWindow.webContents.once('did-finish-load', () => {
+          const state = getDb().getDisplayState();
+          const s     = getDb().getAllSettings();
+          hdmiMirrorWindow.webContents.send('display:update', {
+            type:            'settings',
+            fontSize:        state?.font_size       || s.font_size         || '64',
+            theme:           state?.theme           || s.theme             || 'dark',
+            textColor:       s.text_color           || '#ffffff',
+            transitionSpeed: s.transition_speed     || '0.5',
+            showTranslation: s.show_translation     !== 'false',
+            showReference:   s.show_reference       !== 'false',
+            bgType:          s.bg_type              || 'solid',
+            bgColor:         s.bg_color             || '#000000',
+            bgGradientStart: s.bg_gradient_start    || '#0a1628',
+            bgGradientEnd:   s.bg_gradient_end      || '#1a3a5c',
+            bgImageUrl:      s.bg_image_url         || '',
+            fontFamily:      s.font_family          || 'Georgia, serif',
+            customFontFamily:s.custom_font_family   || '',
+          });
+          if (s.hdmi_layout) {
+            hdmiMirrorWindow.webContents.send('display:update', { type: 'layout', layout: s.hdmi_layout });
+          }
+          if (state?.current_text && state.is_visible) {
+            hdmiMirrorWindow.webContents.send('display:update', {
+              type:        'verse',
+              reference:   state.current_reference,
+              text:        state.current_text,
+              translation: state.translation || 'KJV',
+              visible:     true,
+            });
+          }
+        });
+      }
+    } else {
+      if (hdmiMirrorWindow) { hdmiMirrorWindow.destroy(); hdmiMirrorWindow = null; }
     }
     return { ok: true };
   });
@@ -1212,10 +1306,17 @@ function registerIpcHandlers() {
                     }
                   };
                   r.onerror = (e) => {
-                    fetch('/error', { method: 'POST', body: e.error });
+                    fetch('/error', { method: 'POST', body: e.error + ' - ' + e.message });
                   };
-                  r.onend = () => { r.start(); };
-                  r.start();
+                  r.onend = () => { setTimeout(() => { try { r.start(); } catch(e){} }, 500); };
+                  
+                  // Explicitly request microphone first to wake up audio context and permissions
+                  navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+                    stream.getTracks().forEach(track => track.stop()); // Release lock immediately!
+                    setTimeout(() => { try { r.start(); } catch(e){} }, 50);
+                  }).catch(e => {
+                    fetch('/error', { method: 'POST', body: 'getUserMedia failed: ' + e.message });
+                  });
                 }
               </script>
               </body></html>
@@ -1264,6 +1365,9 @@ function registerIpcHandlers() {
         chromeProcess = spawn(chromePath, [
           '--app=http://127.0.0.1:' + chromeBridgePort + '/',
           '--use-fake-ui-for-media-stream',
+          '--disable-background-timer-throttling',
+          '--disable-renderer-backgrounding',
+          '--unsafely-treat-insecure-origin-as-secure=http://127.0.0.1:' + chromeBridgePort,
           '--window-position=-2000,-2000'
         ]);
         chromeProcess.on('exit', () => { chromeProcess = null; });
@@ -1280,8 +1384,12 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
-  // Kill Chrome bridge process when BibleCast quits
+  // Kill spawned processes when BibleCast quits
   app.on('before-quit', () => {
     if (chromeProcess) { chromeProcess.kill(); chromeProcess = null; }
+    if (activeScrapeProc) {
+      try { activeScrapeProc.kill(); } catch (_) {}
+      activeScrapeProc = null;
+    }
   });
 }

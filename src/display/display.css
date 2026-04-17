@@ -1,7 +1,8 @@
 :root {
-  --font-size:   56px;
-  --text-color:  #ffffff;
-  --transition:  0.5s;
+  --font-size:      56px;
+  --text-color:     #ffffff;
+  --transition:     0.5s;
+  --ref-size-ratio: 0.45;   /* reference text as fraction of main font */
 
   /* Theme backgrounds */
   --bg-dark:    #000000;
@@ -9,7 +10,7 @@
   --bg-blue:    #0a1628;
 
   /* Theme text defaults (overridden per theme) */
-  --ref-color:  #e8c97a;
+  --ref-color:   #e8c97a;
   --badge-color: rgba(255,255,255,0.45);
 }
 
@@ -27,7 +28,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Georgia', 'Times New Roman', serif;
+  /* Allow content to be taller than viewport — autoFitText ensures it fits */
+  overflow: hidden;
+  font-family: var(--font-family, 'Georgia', 'Times New Roman', serif);
   transition: background var(--transition) ease, color var(--transition) ease;
 }
 
@@ -46,9 +49,12 @@ body.theme-blue {
 
 /* ── Verse container ── */
 .verse-container {
-  max-width: 85%;
+  width: 70%;             /* matches operator preview content area */
+  max-width: 70%;
   text-align: center;
-  padding: 60px 80px;
+  padding: 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
   animation: fadeIn var(--transition) ease;
 }
 
@@ -58,7 +64,7 @@ body.theme-blue {
 }
 
 .verse-reference {
-  font-size: calc(var(--font-size) * 0.45);
+  font-size: calc(var(--font-size) * var(--ref-size-ratio));
   font-weight: 700;
   color: var(--ref-color);
   letter-spacing: 2px;
@@ -70,10 +76,15 @@ body.theme-blue {
 
 .verse-text {
   font-size: var(--font-size);
-  line-height: 1.55;
+  /* Line-height tightens slightly at smaller sizes for denser multi-line verses */
+  line-height: 1.5;
   font-style: italic;
   color: var(--text-color);
   text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  /* Ensure long words wrap rather than overflow */
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
   transition: font-size var(--transition) ease, color var(--transition) ease;
 }
 

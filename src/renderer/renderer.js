@@ -19,6 +19,9 @@ let lastProjectedAt    = 0;   // timestamp of last auto-projection
 // Whether the display window is currently open
 let displayWindowOpen = false;
 
+// Whether the HDMI mirror window is currently open
+let hdmiMirrorOpen = false;
+
 // Tracks whether initial settings have been loaded once (guards HDMI auto-open on re-load)
 let settingsLoaded = false;
 
@@ -50,11 +53,174 @@ let settings = {
   proj_debounce:          5,
   autostart_transcription: false,
   theme:                  'dark',
-  font_size:              '64',
+  font_size:              '100',
+  font_family:            'Georgia, serif',
+  custom_font_family:     '',
   show_translation:       true,
   show_reference:         true,
-  whisper_provider:       'vosk',
+  whisper_provider:       'web-speech',
 };
+
+// ── Projection Preview Renderer ───────────────────────────────────────────────
+// Creates a pixel-identical, scaled-down mirror of the actual display window.
+// The virtual canvas is always 1920×1080 (native HD); a CSS scale() transform
+// shrinks it to fit the preview container — so what you see is *exactly* what
+// will appear on the projector at any font size.
+
+const PROJ_W = 1920;
+const PROJ_H = 1080;
+
+function getDisplayBg() {
+  const s = settings;
+  const bgType = s.bg_type || 'solid';
+  if (bgType === 'gradient') {
+    const a = s.bg_gradient_start || '#0a1628';
+    const b = s.bg_gradient_end   || '#1a3a5c';
+    return `linear-gradient(135deg, ${a}, ${b})`;
+  }
+  if (bgType === 'image' && s.bg_image_url) {
+    return `url('${s.bg_image_url}') center/cover no-repeat`;
+  }
+  if (s.theme === 'light') return '#ffffff';
+  if (s.theme === 'blue')  return '#0a1628';
+  return s.bg_color || '#000000';
+}
+
+function getDisplayFontFamily() {
+  const ff = settings.font_family || 'Georgia, serif';
+  if (ff === 'custom') {
+    const custom = settings.custom_font_family || 'Georgia';
+    return `"${custom}", serif`;
+  }
+  return ff;
+}
+
+function getDisplayRefColor() {
+  if (settings.ref_color) return settings.ref_color;
+  if (settings.theme === 'light') return '#8b1a1a';
+  return '#e8c97a';
+}
+
+function getDisplayTextColor() {
+  if (settings.theme === 'light') return '#111111';
+  return settings.text_color || '#ffffff';
+}
+
+/**
+ * Render a verse into a preview canvas as a pixel-identical scaled projection.
+ * Font size is auto-fitted: finds the LARGEST size that fits within 15% margins
+ * on all sides (content area = 70% wide × 70% tall of 1920×1080).
+ *
+ * @param {Element} canvas - the .preview-canvas DOM element
+ * @param {object|null} verse - { reference, text, translation } or null for idle
+ * @param {boolean} blanked - show black screen
+ */
+function renderProjectionPreview(canvas, verse, blanked) {
+  if (!canvas) return;
+
+  const bg         = getDisplayBg();
+  const textColor  = getDisplayTextColor();
+  const refColor   = getDisplayRefColor();
+  const fontFamily = getDisplayFontFamily();
+  const transTime  = (parseFloat(settings.transition_speed) || 0.5) + 's';
+  const showRef    = settings.show_reference  !== false && settings.show_reference  !== 'false';
+  const showTrans  = settings.show_translation !== false && settings.show_translation !== 'false';
+  const isLowerThird = (settings.hdmi_layout === 'lower-third');
+
+  const autoFit = settings.auto_fit_text !== 'false';
+  let fontPx = parseInt(settings.font_size) || 64;
+  let innerHtml;
+
+  if (blanked || !verse) {
+    innerHtml = `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:rgba(255,255,255,0.08);font-size:16px;font-family:${fontFamily};letter-spacing:4px">${blanked ? 'DISPLAY BLANKED' : 'NO VERSE ON DISPLAY'}</div>`;
+  } else {
+    if (autoFit) {
+      // ── Find the maximum font that fits within 15% margins at native resolution ──
+      // Content area: 70% of PROJ_W wide × 70% of PROJ_H tall
+      const contentW = Math.round(PROJ_W * 0.70);
+      const maxH     = PROJ_H * 0.70;
+
+      const outer = document.createElement('div');
+      Object.assign(outer.style, {
+        position: 'fixed', visibility: 'hidden', pointerEvents: 'none',
+        top: '-9999px', left: '-9999px',
+        width: contentW + 'px',
+        boxSizing: 'border-box',
+        wordBreak: 'break-word',
+        overflowWrap: 'break-word',
+      });
+      document.body.appendChild(outer);
+
+      const _refRatio = parseFloat(settings.ref_size_ratio) || 0.45;
+      let lo = 20, hi = 400, best = lo;
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        const rp  = Math.round(mid * _refRatio);
+        const tp  = Math.round(mid * 0.28);
+        outer.innerHTML = `
+          ${showRef ? `<div style="font-family:${fontFamily};font-size:${rp}px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:28px">${escapeHtml(verse.reference || formatRef(verse))}</div>` : ''}
+          <div style="font-family:${fontFamily};font-size:${mid}px;line-height:1.5;font-style:italic;word-break:break-word;overflow-wrap:break-word">&ldquo;${escapeHtml(verse.text)}&rdquo;</div>
+          ${showTrans ? `<div style="font-family:${fontFamily};font-size:${tp}px;margin-top:24px">${escapeHtml(verse.translation || 'KJV')}</div>` : ''}
+        `;
+        if (outer.scrollHeight <= maxH) { best = mid; lo = mid + 1; }
+        else                            { hi   = mid - 1; }
+      }
+      document.body.removeChild(outer);
+      fontPx = best;
+    }
+    // else: fontPx stays as the fixed font_size from settings
+    const refRatio = parseFloat(settings.ref_size_ratio) || 0.45;
+    const refPx    = Math.round(fontPx * refRatio);
+    const transPx  = Math.round(fontPx * 0.28);
+
+    const lowerStyle = isLowerThird
+      ? `position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.82);backdrop-filter:blur(6px);border-top:3px solid rgba(255,255,255,0.15);padding:24px 11.5% 48px;text-align:left;`
+      : '';
+
+    innerHtml = `
+      <div style="${lowerStyle}width:70%;text-align:center;word-break:break-word;overflow-wrap:break-word;animation:fadeInPrev ${transTime} ease">
+        ${showRef ? `<div style="font-family:${fontFamily};font-size:${refPx}px;font-weight:700;color:${refColor};letter-spacing:2px;text-transform:uppercase;margin-bottom:28px">${escapeHtml(verse.reference || formatRef(verse))}</div>` : ''}
+        <div style="font-family:${fontFamily};font-size:${fontPx}px;line-height:1.5;font-style:italic;color:${textColor};text-shadow:0 2px 8px rgba(0,0,0,0.5);word-break:break-word;overflow-wrap:break-word">&ldquo;${escapeHtml(verse.text)}&rdquo;</div>
+        ${showTrans ? `<div style="font-family:${fontFamily};font-size:${transPx}px;color:rgba(255,255,255,0.45);margin-top:24px;letter-spacing:1px">${escapeHtml(verse.translation || 'KJV')}</div>` : ''}
+      </div>
+    `;
+  }
+
+  // Build the 1920×1080 virtual projection surface
+  canvas.innerHTML = `
+    <div class="_proj-surface" style="
+      width:${PROJ_W}px;height:${PROJ_H}px;
+      background:${blanked ? '#000' : bg};
+      display:flex;
+      align-items:${isLowerThird ? 'flex-end' : 'center'};
+      justify-content:center;
+      position:relative;
+      overflow:hidden;
+      transition:background ${transTime} ease;
+    ">${innerHtml}</div>
+    <style>
+      @keyframes fadeInPrev {
+        from{opacity:0;transform:translateY(10px)}
+        to{opacity:1;transform:translateY(0)}
+      }
+    </style>
+  `;
+
+  // Scale the 1920×1080 surface to fit the preview container
+  requestAnimationFrame(() => {
+    const surface = canvas.querySelector('._proj-surface');
+    if (!surface) return;
+    const cw = canvas.clientWidth  || 1;
+    const ch = canvas.clientHeight || 1;
+    const scale = Math.min(cw / PROJ_W, ch / PROJ_H);
+    surface.style.transform       = `scale(${scale})`;
+    surface.style.transformOrigin = 'top left';
+    const sw = PROJ_W * scale;
+    const sh = PROJ_H * scale;
+    surface.style.marginLeft = ((cw - sw) / 2) + 'px';
+    surface.style.marginTop  = ((ch - sh) / 2) + 'px';
+  });
+}
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -88,6 +254,28 @@ async function init() {
 
   // Check for updates 8 seconds after launch (non-blocking)
   setTimeout(checkForUpdates, 8000);
+
+  // Rescale preview canvases whenever their container size changes
+  const rescaleObserver = new ResizeObserver(() => rescaleAllPreviews());
+  ['studio-canvas', 'live-canvas', 'display-canvas'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) rescaleObserver.observe(el);
+  });
+}
+
+function rescaleAllPreviews() {
+  ['studio-canvas', 'live-canvas', 'display-canvas'].forEach(id => {
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    const surface = canvas.querySelector('._proj-surface');
+    if (!surface) return;
+    const cw = canvas.clientWidth  || 1;
+    const ch = canvas.clientHeight || 1;
+    const scale = Math.min(cw / PROJ_W, ch / PROJ_H);
+    surface.style.transform  = `scale(${scale})`;
+    surface.style.marginLeft = ((cw - PROJ_W * scale) / 2) + 'px';
+    surface.style.marginTop  = ((ch - PROJ_H * scale) / 2) + 'px';
+  });
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -454,6 +642,7 @@ function startChromeBridgeCapture() {
 
     api.onChromeSpeechError((msg) => {
       console.warn('[ChromeBridge] Speech error:', msg);
+      if (msg && (msg.includes('aborted') || msg.includes('no-speech'))) return;
       const el = document.getElementById('transcript-text');
       if (el) el.innerHTML = `<span style="color:var(--danger)">Web Speech error: ${escapeHtml(msg)}</span>`;
     });
@@ -1250,23 +1439,21 @@ function selectVerse(verse, _el) {
 }
 
 function updateStudioPreview(verse) {
-  const el = document.getElementById('studio-canvas');
-  if (!el) return;
-  if (!verse) {
-    el.innerHTML = '<div class="preview-placeholder">Search for a verse to queue</div>';
-    return;
-  }
-  el.innerHTML = `
-    <div style="padding:12px 16px;text-align:center;width:100%">
-      <div class="studio-ref">${escapeHtml(verse.reference || formatRef(verse))}</div>
-      <div class="studio-text">"${escapeHtml(verse.text)}"</div>
-    </div>
-  `;
+  const canvas = document.getElementById('studio-canvas');
+  if (!canvas) return;
+  renderProjectionPreview(canvas, verse || null, false);
 }
 
 function updatePushButton() {
-  const btn = document.getElementById('push-btn');
-  if (btn) btn.disabled = !selectedVerse;
+  const disabled = !selectedVerse;
+  ['push-btn','push-btn-dp'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  });
+  ['next-btn','next-btn-dp','prev-btn','prev-btn-dp'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  });
 }
 
 function formatRef(v) {
@@ -1323,47 +1510,26 @@ function updateBlankBtn(blanked) {
 }
 
 function updateLiveBadge(live) {
-  const badge = document.getElementById('live-badge');
-  if (!badge) return;
-  badge.textContent = live ? 'LIVE' : 'STANDBY';
-  badge.className   = 'live-badge' + (live ? ' live' : '');
+  ['live-badge', 'live-badge-dp'].forEach(id => {
+    const badge = document.getElementById(id);
+    if (!badge) return;
+    badge.textContent = live ? 'LIVE' : 'STANDBY';
+    badge.className   = 'live-badge' + (live ? ' live' : '');
+  });
 }
 
 function updateLivePreview(verse, blanked) {
   const canvas = document.getElementById('live-canvas');
   if (!canvas) return;
-
-  if (blanked || !verse) {
-    canvas.innerHTML = '<div class="preview-empty">No verse on display</div>';
-    updateStatusBadge(false);
-    return;
-  }
-
-  canvas.innerHTML = `
-    <div style="padding:12px;text-align:center;width:100%">
-      <div class="preview-reference">${escapeHtml(verse.reference || formatRef(verse))}</div>
-      <div class="preview-text">"${escapeHtml(verse.text)}"</div>
-    </div>
-  `;
-  updateStatusBadge(true);
+  renderProjectionPreview(canvas, verse || null, blanked);
+  updateStatusBadge(!blanked && !!verse);
 }
 
 function syncDisplayPreviewLarge(verse) {
   const canvas = document.getElementById('display-canvas');
   if (!canvas) return;
-
   const v = verse || selectedVerse;
-  if (!v) {
-    canvas.innerHTML = '<div class="preview-empty">No verse on display</div>';
-    return;
-  }
-
-  canvas.innerHTML = `
-    <div style="padding:28px 48px;text-align:center;width:100%">
-      <div class="preview-reference" style="font-size:1.4rem;margin-bottom:16px">${escapeHtml(v.reference || formatRef(v))}</div>
-      <div class="preview-text" style="font-size:1.6rem">"${escapeHtml(v.text)}"</div>
-    </div>
-  `;
+  renderProjectionPreview(canvas, v || null, isBlank);
 }
 
 async function syncDisplayState() {
@@ -1387,14 +1553,9 @@ async function syncDisplayState() {
 
   if (state.current_text) {
     const canvas = document.getElementById('live-canvas');
-    // Always update live canvas from DB state (removes stale DOM guard that blocked external changes)
     if (canvas) {
-      canvas.innerHTML = `
-        <div style="padding:12px;text-align:center;width:100%">
-          <div class="preview-reference">${escapeHtml(state.current_reference || '')}</div>
-          <div class="preview-text">"${escapeHtml(state.current_text)}"</div>
-        </div>
-      `;
+      const v = { reference: state.current_reference || '', text: state.current_text, translation: state.translation || 'KJV' };
+      renderProjectionPreview(canvas, visible ? v : null, !visible);
       canvas.classList.toggle('blanked', !visible);
     }
   }
@@ -1402,12 +1563,17 @@ async function syncDisplayState() {
 
 function updateDisplayBtn() {
   const btn = document.getElementById('open-display-btn');
-  if (!btn) return;
-  if (displayWindowOpen) {
-    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Close Display`;
-  } else {
-    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Open Display`;
+  if (btn) {
+    if (displayWindowOpen) {
+      btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Close Display`;
+    } else {
+      btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Open Display`;
+    }
   }
+  // Keep HDMI toggle in sync
+  const hdmiToggle = document.getElementById('hdmi-toggle');
+  if (hdmiToggle) hdmiToggle.checked = displayWindowOpen;
+  api.saveSetting('hdmi_enabled', displayWindowOpen.toString());
 }
 
 function updateStatusBadge(live) {
@@ -1515,10 +1681,9 @@ async function refreshHistory(sessionId) {
 
 async function loadAllSettings() {
   const s  = await api.getSettings();
-  // Migrate: Web Speech API doesn't work in Electron — move to Vosk
-  if (!s.whisper_provider || s.whisper_provider === 'webspeech') {
-    s.whisper_provider = 'vosk';
-    api.saveSetting('whisper_provider', 'vosk');
+  if (!s.whisper_provider) {
+    s.whisper_provider = 'web-speech';
+    api.saveSetting('whisper_provider', 'web-speech');
   }
   settings = { ...settings, ...s };
 
@@ -1547,6 +1712,20 @@ async function loadAllSettings() {
     if (transLbl) transLbl.textContent = parseFloat(s.transition_speed).toFixed(1) + 's';
   }
 
+  const autofitEl = document.getElementById('setting-autofit-text');
+  if (autofitEl) autofitEl.checked = s.auto_fit_text !== 'false'; // default true
+
+  // Reference text style
+  const refColorEl = document.getElementById('setting-ref-color');
+  if (refColorEl) refColorEl.value = s.ref_color || '#e8c97a';
+  const refSizeEl  = document.getElementById('setting-ref-size');
+  const refSizeLbl = document.getElementById('ref-size-val');
+  if (refSizeEl) {
+    const pct = Math.round((parseFloat(s.ref_size_ratio) || 0.45) * 100);
+    refSizeEl.value = pct;
+    if (refSizeLbl) refSizeLbl.textContent = pct + '%';
+  }
+
   if (s.bg_type) setActiveSegBtn('rs-bg-type', s.bg_type);
 
   // Restore bg color pickers
@@ -1569,22 +1748,11 @@ async function loadAllSettings() {
   if (gradRow)  gradRow.style.display  = bgType === 'gradient' ? 'block' : 'none';
   if (imgRow)   imgRow.style.display   = bgType === 'image'    ? 'block' : 'none';
 
-  // Restore HDMI toggle & auto-open display if it was enabled
-  // Only auto-open once on initial load — not on every settings save/reload
+  // Restore HDMI toggle — default OFF on launch
   const hdmiToggle = document.getElementById('hdmi-toggle');
   if (hdmiToggle) {
-    const hdmiEnabled = s.hdmi_enabled !== 'false'; // default true
+    const hdmiEnabled = s.hdmi_enabled === 'true'; // default false — display starts off
     hdmiToggle.checked = hdmiEnabled;
-    if (!settingsLoaded && hdmiEnabled && !displayWindowOpen) {
-      // Delay slightly so KJV auto-seed (800ms) completes before display window opens
-      setTimeout(async () => {
-        if (!displayWindowOpen) {
-          const r = await api.openDisplay();
-          displayWindowOpen = !!r.open;
-          updateDisplayBtn();
-        }
-      }, 1200);
-    }
   }
 
   // Restore NDI toggle & re-open NDI window if it was enabled (only on first load)
@@ -1593,6 +1761,15 @@ async function loadAllSettings() {
     const ndiEnabled = s.ndi_enabled === 'true';
     ndiToggle.checked = ndiEnabled;
     if (!settingsLoaded && ndiEnabled) await api.openNdiDisplay(true);
+  }
+
+  // Restore HDMI mirror toggle (Display Settings pane)
+  const hdmiMirrorToggle = document.getElementById('hdmi-mirror-toggle');
+  if (hdmiMirrorToggle) {
+    const mirrorEnabled = s.hdmi_mirror_enabled === 'true';
+    hdmiMirrorToggle.checked = mirrorEnabled;
+    hdmiMirrorOpen = mirrorEnabled;
+    if (!settingsLoaded && mirrorEnabled) await api.openHdmiMirror(true);
   }
 
   // Restore HDMI layout button
@@ -1606,7 +1783,7 @@ async function loadSettingsView() {
   const s = await api.getSettings();
 
   // Transcription & Audio
-  setSelectVal('setting-whisper-provider', s.whisper_provider || 'vosk');
+  setSelectVal('setting-whisper-provider', s.whisper_provider || 'web-speech');
   setSelectVal('setting-whisper-model',    s.whisper_model    || 'Xenova/whisper-base.en');
   setSelectVal('setting-whisper-threads',  s.whisper_threads  || 'auto');
   setCheckbox('setting-whisper-gpu',       s.whisper_gpu === 'true');
@@ -1633,7 +1810,11 @@ async function loadSettingsView() {
   setSlider('setting-proj-debounce', 'setting-proj-debounce-val', s.proj_debounce || '5',    v => v+'s');
   // Display
   setSelectVal('settings-theme',       s.theme);
-  setSelectVal('settings-font-size',   s.font_size);
+  setSlider('settings-font-size', 'settings-font-size-val', s.font_size || '64', v => v + 'px');
+  setSelectVal('settings-font-family', s.font_family || 'Georgia, serif');
+  setInputVal('setting-custom-font', s.custom_font_family || '');
+  const customRow = document.getElementById('custom-font-row');
+  if (customRow) customRow.style.display = (s.font_family === 'custom') ? 'flex' : 'none';
   setCheckbox('setting-show-translation', s.show_translation !== 'false');
   setCheckbox('setting-show-reference',   s.show_reference   !== 'false');
   if (s.standby_bg_type) setActiveSegBtn('standby-bg-type', s.standby_bg_type);
@@ -1674,6 +1855,8 @@ async function saveAllSettings() {
     ['proj_debounce',           getSliderVal('setting-proj-debounce')],
     ['theme',                   theme || 'dark'],
     ['font_size',               fontSize || '64'],
+    ['font_family',             document.getElementById('settings-font-family')?.value || 'Georgia, serif'],
+    ['custom_font_family',      document.getElementById('setting-custom-font')?.value],
     ['show_translation',        getCheckbox('setting-show-translation')],
     ['show_reference',          getCheckbox('setting-show-reference')],
     ['standby_bg_type',         getActiveSegBtn('standby-bg-type')],
@@ -1691,11 +1874,14 @@ async function saveAllSettings() {
   // Reload settings cache
   await loadAllSettings();
   showToast('Settings saved');
+  switchView('control');
 }
 
 async function saveDisplaySettings() {
   const theme      = document.getElementById('setting-theme')?.value;
   const fontSize   = document.getElementById('setting-font-size')?.value;
+  const fontFamily = document.getElementById('settings-font-family')?.value;
+  const customFont = document.getElementById('setting-custom-font')?.value;
   const textColor  = document.getElementById('setting-text-color')?.value;
   const transition = document.getElementById('setting-transition-speed')?.value;
   const bgType     = document.querySelector('#rs-bg-type .seg-btn.active')?.dataset.val || 'solid';
@@ -1703,9 +1889,14 @@ async function saveDisplaySettings() {
   const bgGradS    = document.getElementById('setting-bg-grad-start')?.value  || '#0a1628';
   const bgGradE    = document.getElementById('setting-bg-grad-end')?.value    || '#1a3a5c';
   const bgImageUrl = document.getElementById('setting-bg-image-url')?.value   || '';
+  const autoFit    = document.getElementById('setting-autofit-text')?.checked !== false;
+  const refColor   = document.getElementById('setting-ref-color')?.value;
+  const refSizePct = parseInt(document.getElementById('setting-ref-size')?.value) || 45;
 
   if (theme)      await api.saveSetting('theme', theme);
   if (fontSize)   await api.saveSetting('font_size', fontSize);
+  if (fontFamily) await api.saveSetting('font_family', fontFamily);
+  if (customFont !== undefined) await api.saveSetting('custom_font_family', customFont);
   if (textColor)  await api.saveSetting('text_color', textColor);
   if (transition !== undefined) await api.saveSetting('transition_speed', transition);
   await api.saveSetting('bg_type',           bgType);
@@ -1713,6 +1904,9 @@ async function saveDisplaySettings() {
   await api.saveSetting('bg_gradient_start', bgGradS);
   await api.saveSetting('bg_gradient_end',   bgGradE);
   if (bgImageUrl) await api.saveSetting('bg_image_url', bgImageUrl);
+  await api.saveSetting('auto_fit_text',   autoFit.toString());
+  if (refColor) await api.saveSetting('ref_color',      refColor);
+  await api.saveSetting('ref_size_ratio', (refSizePct / 100).toFixed(2));
 
   await loadAllSettings();
   showToast('Display settings saved');
@@ -1797,12 +1991,38 @@ function bindEvents() {
   document.getElementById('translation-select')?.addEventListener('change', doSearch);
   document.getElementById('find-btn')?.addEventListener('click', doSearch);
 
-  // Display controls
+  // Display controls — primary (Live Output panel)
   document.getElementById('push-btn')?.addEventListener('click', pushVerse);
-  document.getElementById('clear-btn')?.addEventListener('click', () => {
-    if (isBlank) toggleBlank(); // unblank
-    else toggleBlank();         // blank
-  });
+  document.getElementById('next-btn')?.addEventListener('click', () => navigateVerse('next'));
+  document.getElementById('prev-btn')?.addEventListener('click', () => navigateVerse('prev'));
+
+  // Display controls — Display Preview view (identical behaviour)
+  document.getElementById('push-btn-dp')?.addEventListener('click', pushVerse);
+  document.getElementById('next-btn-dp')?.addEventListener('click', () => navigateVerse('next'));
+  document.getElementById('prev-btn-dp')?.addEventListener('click', () => navigateVerse('prev'));
+
+  // Shared clear handler used by both clear buttons
+  async function handleClear() {
+    if (!isBlank) {
+      isBlank = true;
+      await api.blankDisplay(true);
+      updateBlankBtn(true);
+      updateLiveBadge(false);
+      updateStatusBadge(false);
+      const lc = document.getElementById('live-canvas');
+      if (lc) renderProjectionPreview(lc, null, true);
+      const dc = document.getElementById('display-canvas');
+      if (dc) renderProjectionPreview(dc, null, true);
+    }
+    // Forcefully close the projection window
+    if (displayWindowOpen) {
+      const result = await api.openDisplay();
+      displayWindowOpen = !!result.open;
+      updateDisplayBtn(); // also unchecks hdmi-toggle
+    }
+  }
+  document.getElementById('clear-btn')?.addEventListener('click', handleClear);
+  document.getElementById('clear-btn-dp')?.addEventListener('click', handleClear);
 
   // Top bar toggles
   document.getElementById('listen-btn')?.addEventListener('click', toggleListening);
@@ -1824,9 +2044,27 @@ function bindEvents() {
 
   // Right sidebar Display pane
   document.getElementById('save-settings-btn')?.addEventListener('click', saveDisplaySettings);
+
+  document.getElementById('settings-font-family')?.addEventListener('change', e => {
+    const customRow = document.getElementById('custom-font-row');
+    if (customRow) customRow.style.display = e.target.value === 'custom' ? 'flex' : 'none';
+  });
+
+  document.getElementById('settings-font-size')?.addEventListener('input', e => {
+    const lbl = document.getElementById('settings-font-size-val');
+    if (lbl) lbl.textContent = e.target.value + 'px';
+  });
   document.getElementById('reset-color-btn')?.addEventListener('click', () => {
     const colorEl = document.getElementById('setting-text-color');
     if (colorEl) colorEl.value = '#ffffff';
+  });
+  document.getElementById('reset-ref-color-btn')?.addEventListener('click', () => {
+    const el = document.getElementById('setting-ref-color');
+    if (el) el.value = '#e8c97a';
+  });
+  document.getElementById('setting-ref-size')?.addEventListener('input', e => {
+    const lbl = document.getElementById('ref-size-val');
+    if (lbl) lbl.textContent = e.target.value + '%';
   });
 
   // Background color presets
@@ -1865,25 +2103,44 @@ function bindEvents() {
   });
 
   // Right sidebar Outputs pane — toggle display window
+  // Opening also projects the current verse (same as clicking Project)
   document.getElementById('open-display-btn')?.addEventListener('click', async () => {
     const result = await api.openDisplay();
     displayWindowOpen = !!result.open;
     updateDisplayBtn();
+    if (displayWindowOpen && selectedVerse) {
+      await pushVerse();
+    }
   });
   document.getElementById('hdmi-toggle')?.addEventListener('change', async e => {
     const want = e.target.checked;
-    // Sync display window open/closed state with the HDMI toggle
     if (want !== displayWindowOpen) {
       const r = await api.openDisplay();
       displayWindowOpen = !!r.open;
       updateDisplayBtn();
+      if (displayWindowOpen && selectedVerse) await pushVerse();
     }
-    api.saveSetting('hdmi_enabled', want.toString());
   });
   document.getElementById('ndi-toggle')?.addEventListener('change', async e => {
     const want = e.target.checked;
     await api.openNdiDisplay(want);
     api.saveSetting('ndi_enabled', want.toString());
+  });
+
+  // HDMI Mirror toggle (Display Settings pane)
+  document.getElementById('hdmi-mirror-toggle')?.addEventListener('change', async e => {
+    const want = e.target.checked;
+    await api.openHdmiMirror(want);
+    hdmiMirrorOpen = want;
+    api.saveSetting('hdmi_mirror_enabled', want.toString());
+  });
+
+  // Handle mirror window closed externally (e.g. Alt+F4)
+  api.onHdmiMirrorClosed(() => {
+    hdmiMirrorOpen = false;
+    const t = document.getElementById('hdmi-mirror-toggle');
+    if (t) t.checked = false;
+    api.saveSetting('hdmi_mirror_enabled', 'false');
   });
 
   // Bibles pane import button
@@ -1919,15 +2176,12 @@ function bindEvents() {
     }
   });
 
-  // Display window closed by OS — keep displayWindowOpen flag in sync
+  // Display window closed by OS — keep all state in sync
   api.onDisplayClosed(() => {
     displayWindowOpen = false;
-    updateDisplayBtn();
+    updateDisplayBtn(); // also unchecks hdmi-toggle and saves hdmi_enabled=false
     updateStatusBadge(false);
     updateLiveBadge(false);
-    const hdmiToggle = document.getElementById('hdmi-toggle');
-    if (hdmiToggle) hdmiToggle.checked = false;
-    api.saveSetting('hdmi_enabled', 'false');
   });
 
   // Navigate to settings (from main process)

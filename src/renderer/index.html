@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' blob: data: https://ccoreilly.github.io https://*.githubusercontent.com; media-src 'self' blob:; img-src 'self' data: blob: file: https:; font-src 'self' data:;" />
+    content="default-src 'self'; script-src 'self' blob:; worker-src blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' blob: data: https://ccoreilly.github.io https://*.githubusercontent.com; media-src 'self' blob:; img-src 'self' data: blob: file: https:; font-src 'self' data:;" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BibleCast — Operator</title>
   <link rel="stylesheet" href="styles.css" />
@@ -138,9 +138,15 @@
                 </div>
               </div>
               <div class="output-controls">
+                <button id="prev-btn" class="btn-clear" disabled title="Previous Verse">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
                 <button id="push-btn" class="btn-project" disabled>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                   Project
+                </button>
+                <button id="next-btn" class="btn-clear" disabled title="Next Verse">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
                 </button>
                 <button id="clear-btn" class="btn-clear">Clear</button>
               </div>
@@ -251,6 +257,17 @@
               <option value="100">Huge</option>
             </select>
 
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;margin-bottom:4px">
+              <div>
+                <div class="rs-field-lbl" style="margin:0">AUTO-FIT TEXT</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">Scale text to fill the screen automatically</div>
+              </div>
+              <label class="toggle-wrap">
+                <input type="checkbox" id="setting-autofit-text" checked>
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+
             <div class="rs-field-lbl">TEXT COLOR</div>
             <div class="color-row">
               <input type="color" id="setting-text-color" value="#ffffff" class="color-swatch" />
@@ -307,9 +324,25 @@
               <button id="bg-upload-btn" class="btn btn-secondary btn-sm" style="width:100%">Upload Image…</button>
             </div>
 
+            <div class="rs-field-lbl" style="margin-top:14px">REFERENCE TEXT</div>
+            <div class="color-row" style="margin-bottom:8px">
+              <input type="color" id="setting-ref-color" value="#e8c97a" class="color-swatch" title="Reference text color" />
+              <button id="reset-ref-color-btn" class="btn btn-secondary btn-sm">Reset</button>
+            </div>
+            <div class="rs-field-lbl-row">
+              <span class="rs-field-lbl" style="margin:0">REFERENCE SIZE</span>
+              <span id="ref-size-val" class="rs-field-val">45%</span>
+            </div>
+            <input type="range" id="setting-ref-size" min="20" max="100" step="1" value="45" class="full-slider" />
+            <div class="slider-range-labels">
+              <span>20% (Small)</span>
+              <span>100% (Same as verse)</span>
+            </div>
+
             <button id="save-settings-btn" class="btn btn-primary" style="margin-top:16px;width:100%">
               Apply
             </button>
+
           </div>
 
           <!-- ── Outputs pane ── -->
@@ -392,6 +425,23 @@
               </div>
             </div>
 
+            <!-- HDMI Mirror card -->
+            <div class="output-card">
+              <div class="output-card-hdr">
+                <span class="output-card-title">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                  HDMI Mirror
+                </span>
+                <label class="toggle-wrap">
+                  <input type="checkbox" id="hdmi-mirror-toggle">
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+              <div class="output-card-body">
+                <p class="output-card-desc">Mirror the live output 1:1 on a secondary monitor. Shows only the verse canvas — no controls.</p>
+              </div>
+            </div>
+
           </div><!-- /#rs-outputs -->
         </aside>
 
@@ -423,15 +473,35 @@
            VIEW: DISPLAY PREVIEW
       ──────────────────────────────────────────── -->
       <div class="view" id="view-display-preview">
-        <div class="view-hdr">
-          <h2>Display Preview</h2>
-          <p class="view-sub">Live mirror of the projection screen</p>
+
+        <!-- Header — mirrors the Live Output panel header -->
+        <div class="panel-hdr" style="padding:10px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <span class="panel-lbl">LIVE OUTPUT</span>
+          <span id="live-badge-dp" class="live-badge">STANDBY</span>
         </div>
-        <div id="display-preview-large" class="display-preview-large">
+
+        <!-- Full-size projection canvas -->
+        <div class="display-preview-large">
           <div id="display-canvas" class="preview-canvas preview-canvas--large">
             <div class="preview-empty">No verse on display</div>
           </div>
         </div>
+
+        <!-- Controls — identical to Live Output output-controls -->
+        <div class="output-controls" style="padding:12px 18px;border-top:1px solid var(--border);flex-shrink:0">
+          <button id="prev-btn-dp" class="btn-clear" disabled title="Previous Verse">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <button id="push-btn-dp" class="btn-project" disabled>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Project
+          </button>
+          <button id="next-btn-dp" class="btn-clear" disabled title="Next Verse">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <button id="clear-btn-dp" class="btn-clear">Clear</button>
+        </div>
+
       </div>
 
       <!-- ─────────────────────────────────────────
@@ -469,7 +539,7 @@
               <select id="setting-whisper-provider" class="setting-select">
                 <option value="vosk">Vosk — real-time, offline (recommended)</option>
                 <option value="whisper-local">Whisper AI — most accurate, offline (slower)</option>
-                <option value="web-speech">Web Speech API — system engine, cloud-based</option>
+                <option value="web-speech" selected>Web Speech API — system engine, cloud-based</option>
               </select>
             </div>
             <div class="setting-row" id="whisper-model-row">
@@ -629,14 +699,32 @@
               </select>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-name">Default font size</div></div>
-              <select id="settings-font-size" class="setting-select">
-                <option value="36">Small</option>
-                <option value="48">Medium</option>
-                <option value="64" selected>Large</option>
-                <option value="80">Extra Large</option>
-                <option value="100">Huge</option>
+              <div class="setting-info">
+                <div class="setting-name">Max font size</div>
+                <div class="setting-desc">Auto-scales down to fit if text exceeds bounds</div>
+              </div>
+              <div class="slider-wrap">
+                <input type="range" id="settings-font-size" min="30" max="250" step="2" value="100" class="setting-slider" />
+                <span id="settings-font-size-val" class="slider-val">100px</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-name">Font family</div></div>
+              <select id="settings-font-family" class="setting-select">
+                <option value="Georgia, serif">Georgia</option>
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="Verdana, sans-serif">Verdana</option>
+                <option value="'Times New Roman', serif">Times New Roman</option>
+                <option value="Impact, sans-serif">Impact</option>
+                <option value="custom">Custom Font...</option>
               </select>
+            </div>
+            <div class="setting-row" id="custom-font-row" style="display:none">
+              <div class="setting-info">
+                <div class="setting-name">Custom font name</div>
+                <div class="setting-desc">Type exactly as installed (e.g. Montserrat)</div>
+              </div>
+              <input type="text" id="setting-custom-font" class="setting-input" placeholder="Open Sans" autocomplete="off" />
             </div>
             <div class="setting-row">
               <div class="setting-info">
@@ -793,7 +881,7 @@
             <div class="setting-row">
               <div class="setting-info">
                 <div class="setting-name">Software updates</div>
-                <div class="setting-desc">Current version: <span id="about-version">1.1.4</span></div>
+                <div class="setting-desc">Current version: <span id="about-version">1.2.0</span></div>
               </div>
               <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
                 <span id="update-status-text" style="font-size:0.75rem;color:var(--text-muted)"></span>
@@ -802,7 +890,7 @@
             </div>
             <div class="about-card">
               <div class="about-title">ℹ About BibleCast</div>
-              <div class="about-row"><span>Version</span><span id="about-version-card">1.1.4</span></div>
+              <div class="about-row"><span>Version</span><span id="about-version-card">1.2.0</span></div>
               <div class="about-row"><span>Build</span><span>April 2026</span></div>
               <div class="about-row">
                 <span>Stack</span>
