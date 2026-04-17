@@ -1598,8 +1598,9 @@ async function syncDisplayState() {
   isBlank       = !visible;
 
   updateBlankBtn(isBlank);
-  updateStatusBadge(visible && !!state.current_text);
-  updateLiveBadge(visible && !!state.current_text);
+  const projLive = displayWindowOpen && visible && !!state.current_text;
+  updateStatusBadge(projLive);
+  updateLiveBadge(projLive);
 
   // Update the output status in Outputs pane
   const statusEl = document.getElementById('output-status-text');
@@ -1632,6 +1633,9 @@ function updateDisplayBtn() {
       btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Close Display`;
     } else {
       btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Open Display`;
+      // Display just closed — immediately clear live indicators
+      updateStatusBadge(false);
+      updateLiveBadge(false);
     }
   }
   // Keep HDMI toggle in sync
@@ -1885,8 +1889,12 @@ async function loadSettingsView() {
   if (customRow) customRow.style.display = (s.font_family === 'custom') ? 'flex' : 'none';
   setCheckbox('setting-show-translation', s.show_translation !== 'false');
   setCheckbox('setting-show-reference',   s.show_reference   !== 'false');
-  if (s.standby_bg_type) setActiveSegBtn('standby-bg-type', s.standby_bg_type);
-  setInputVal('setting-standby-url', s.standby_url);
+  // Standby background — wired to the same keys as the Display tab
+  const bgTypeForStandby = s.bg_type || s.standby_bg_type || 'solid';
+  setActiveSegBtn('standby-bg-type', bgTypeForStandby);
+  const standbyUrlRow = document.getElementById('standby-bg-url-row');
+  if (standbyUrlRow) standbyUrlRow.style.display = bgTypeForStandby === 'image' ? 'flex' : 'none';
+  setInputVal('setting-standby-url', s.bg_image_url || s.standby_url || '');
   // Session
   setInputVal('setting-default-session-name', s.default_session_name || 'Sunday Morning Service');
   setCheckbox('setting-auto-session',      s.auto_session      === 'true');
@@ -1927,8 +1935,8 @@ async function saveAllSettings() {
     ['custom_font_family',      document.getElementById('setting-custom-font')?.value],
     ['show_translation',        getCheckbox('setting-show-translation')],
     ['show_reference',          getCheckbox('setting-show-reference')],
-    ['standby_bg_type',         getActiveSegBtn('standby-bg-type')],
-    ['standby_url',             getInputVal('setting-standby-url')],
+    ['bg_type',                 getActiveSegBtn('standby-bg-type')],
+    ['bg_image_url',            getInputVal('setting-standby-url')],
     ['default_session_name',    getInputVal('setting-default-session-name')],
     ['auto_session',            getCheckbox('setting-auto-session')],
     ['clear_transcript',        getCheckbox('setting-clear-transcript')],
@@ -1971,7 +1979,7 @@ async function saveDisplaySettings() {
   await api.saveSetting('bg_color',          bgColor);
   await api.saveSetting('bg_gradient_start', bgGradS);
   await api.saveSetting('bg_gradient_end',   bgGradE);
-  if (bgImageUrl) await api.saveSetting('bg_image_url', bgImageUrl);
+  await api.saveSetting('bg_image_url', bgImageUrl);
   await api.saveSetting('auto_fit_text',   autoFit.toString());
   if (refColor) await api.saveSetting('ref_color',      refColor);
   await api.saveSetting('ref_size_ratio', (refSizePct / 100).toFixed(2));
@@ -2106,6 +2114,15 @@ function bindEvents() {
 
   // Session
   document.getElementById('new-session-btn')?.addEventListener('click', createSession);
+  document.getElementById('session-name-input')?.addEventListener('focus', function() {
+    if (!this.value) {
+      const now = new Date();
+      const datePart = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+      const timePart = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      this.value = `${datePart} – ${timePart}`;
+      this.select();
+    }
+  });
   document.getElementById('session-name-input')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') createSession();
   });

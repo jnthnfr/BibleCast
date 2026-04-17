@@ -127,6 +127,7 @@ function createOperatorWindow() {
     minWidth: 1100,
     minHeight: 680,
     title: 'BibleCast — Operator',
+    icon: path.join(__dirname, 'assets', 'icons', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
