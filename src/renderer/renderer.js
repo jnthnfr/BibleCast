@@ -135,55 +135,104 @@ function renderProjectionPreview(canvas, verse, blanked) {
     innerHtml = `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:rgba(255,255,255,0.08);font-size:16px;font-family:${fontFamily};letter-spacing:4px">${blanked ? 'DISPLAY BLANKED' : 'NO VERSE ON DISPLAY'}</div>`;
   } else {
     if (autoFit) {
-      // ── Find the maximum font that fits within 15% margins at native resolution ──
-      // Content area: 70% of PROJ_W wide × 70% of PROJ_H tall
-      const contentW = Math.round(PROJ_W * 0.70);
-      const maxH     = PROJ_H * 0.70;
-
-      const outer = document.createElement('div');
-      Object.assign(outer.style, {
-        position: 'fixed', visibility: 'hidden', pointerEvents: 'none',
-        top: '-9999px', left: '-9999px',
-        width: contentW + 'px',
-        boxSizing: 'border-box',
-        wordBreak: 'break-word',
-        overflowWrap: 'break-word',
-      });
-      document.body.appendChild(outer);
-
       const _refRatio = parseFloat(settings.ref_size_ratio) || 0.45;
-      let lo = 20, hi = 400, best = lo;
-      while (lo <= hi) {
-        const mid = Math.floor((lo + hi) / 2);
-        const rp  = Math.round(mid * _refRatio);
-        const tp  = Math.round(mid * 0.28);
-        outer.innerHTML = `
-          ${showRef ? `<div style="font-family:${fontFamily};font-size:${rp}px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:28px">${escapeHtml(verse.reference || formatRef(verse))}</div>` : ''}
-          <div style="font-family:${fontFamily};font-size:${mid}px;line-height:1.5;font-style:italic;word-break:break-word;overflow-wrap:break-word">&ldquo;${escapeHtml(verse.text)}&rdquo;</div>
-          ${showTrans ? `<div style="font-family:${fontFamily};font-size:${tp}px;margin-top:24px">${escapeHtml(verse.translation || 'KJV')}</div>` : ''}
-        `;
-        if (outer.scrollHeight <= maxH) { best = mid; lo = mid + 1; }
-        else                            { hi   = mid - 1; }
+
+      if (isLowerThird) {
+        // ── Lower-third: bar capped at 30% of PROJ_H ──────────────────────────
+        // CSS scales: verse=0.62×, ref=0.28×, trans=0.22× of --font-size.
+        // Horizontal padding is ~11.5% each side → usable width = 77% of PROJ_W.
+        const contentW = Math.round(PROJ_W * 0.77);
+        const maxH     = PROJ_H * 0.30;
+        const padding  = 24 + 48; // top + bottom padding in px (at native res)
+
+        const outer = document.createElement('div');
+        Object.assign(outer.style, {
+          position: 'fixed', visibility: 'hidden', pointerEvents: 'none',
+          top: '-9999px', left: '-9999px',
+          width: contentW + 'px',
+          boxSizing: 'border-box',
+          wordBreak: 'break-word',
+          overflowWrap: 'break-word',
+          padding: padding + 'px 0',
+        });
+        document.body.appendChild(outer);
+
+        let lo = 20, hi = 200, best = lo;
+        while (lo <= hi) {
+          const mid  = Math.floor((lo + hi) / 2);
+          const vp   = Math.round(mid * 0.62);  // verse text scale in lower-third
+          const rp   = Math.round(mid * 0.28);  // reference scale
+          const tp   = Math.round(mid * 0.22);  // translation scale
+          outer.innerHTML = `
+            ${showRef ? `<div style="font-family:${fontFamily};font-size:${rp}px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">${escapeHtml(verse.reference || formatRef(verse))}</div>` : ''}
+            <div style="font-family:${fontFamily};font-size:${vp}px;line-height:1.5;font-style:italic;word-break:break-word;overflow-wrap:break-word">&ldquo;${escapeHtml(verse.text)}&rdquo;</div>
+            ${showTrans ? `<div style="font-family:${fontFamily};font-size:${tp}px;margin-top:10px">${escapeHtml(verse.translation || 'KJV')}</div>` : ''}
+          `;
+          if (outer.scrollHeight <= maxH) { best = mid; lo = mid + 1; }
+          else                            { hi   = mid - 1; }
+        }
+        document.body.removeChild(outer);
+        fontPx = best;
+
+      } else {
+        // ── Fullscreen: fill up to 70% of PROJ_H ──────────────────────────────
+        const contentW = Math.round(PROJ_W * 0.70);
+        const maxH     = PROJ_H * 0.70;
+
+        const outer = document.createElement('div');
+        Object.assign(outer.style, {
+          position: 'fixed', visibility: 'hidden', pointerEvents: 'none',
+          top: '-9999px', left: '-9999px',
+          width: contentW + 'px',
+          boxSizing: 'border-box',
+          wordBreak: 'break-word',
+          overflowWrap: 'break-word',
+        });
+        document.body.appendChild(outer);
+
+        let lo = 20, hi = 400, best = lo;
+        while (lo <= hi) {
+          const mid = Math.floor((lo + hi) / 2);
+          const rp  = Math.round(mid * _refRatio);
+          const tp  = Math.round(mid * 0.28);
+          outer.innerHTML = `
+            ${showRef ? `<div style="font-family:${fontFamily};font-size:${rp}px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:28px">${escapeHtml(verse.reference || formatRef(verse))}</div>` : ''}
+            <div style="font-family:${fontFamily};font-size:${mid}px;line-height:1.5;font-style:italic;word-break:break-word;overflow-wrap:break-word">&ldquo;${escapeHtml(verse.text)}&rdquo;</div>
+            ${showTrans ? `<div style="font-family:${fontFamily};font-size:${tp}px;margin-top:24px">${escapeHtml(verse.translation || 'KJV')}</div>` : ''}
+          `;
+          if (outer.scrollHeight <= maxH) { best = mid; lo = mid + 1; }
+          else                            { hi   = mid - 1; }
+        }
+        document.body.removeChild(outer);
+        fontPx = best;
       }
-      document.body.removeChild(outer);
-      fontPx = best;
     }
     // else: fontPx stays as the fixed font_size from settings
     const refRatio = parseFloat(settings.ref_size_ratio) || 0.45;
     const refPx    = Math.round(fontPx * refRatio);
     const transPx  = Math.round(fontPx * 0.28);
 
-    const lowerStyle = isLowerThird
-      ? `position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.82);backdrop-filter:blur(6px);border-top:3px solid rgba(255,255,255,0.15);padding:24px 11.5% 48px;text-align:left;`
-      : '';
-
-    innerHtml = `
-      <div style="${lowerStyle}width:70%;text-align:center;word-break:break-word;overflow-wrap:break-word;animation:fadeInPrev ${transTime} ease">
-        ${showRef ? `<div style="font-family:${fontFamily};font-size:${refPx}px;font-weight:700;color:${refColor};letter-spacing:2px;text-transform:uppercase;margin-bottom:28px">${escapeHtml(verse.reference || formatRef(verse))}</div>` : ''}
-        <div style="font-family:${fontFamily};font-size:${fontPx}px;line-height:1.5;font-style:italic;color:${textColor};text-shadow:0 2px 8px rgba(0,0,0,0.5);word-break:break-word;overflow-wrap:break-word">&ldquo;${escapeHtml(verse.text)}&rdquo;</div>
-        ${showTrans ? `<div style="font-family:${fontFamily};font-size:${transPx}px;color:rgba(255,255,255,0.45);margin-top:24px;letter-spacing:1px">${escapeHtml(verse.translation || 'KJV')}</div>` : ''}
-      </div>
-    `;
+    if (isLowerThird) {
+      // In lower-third the CSS scales: verse=0.62×, ref=0.28×, trans=0.22×
+      const ltVersePx = Math.round(fontPx * 0.62);
+      const ltRefPx   = Math.round(fontPx * 0.28);
+      const ltTransPx = Math.round(fontPx * 0.22);
+      innerHtml = `
+        <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.82);backdrop-filter:blur(6px);border-top:3px solid rgba(255,255,255,0.15);padding:24px 11.5% 48px;text-align:left;word-break:break-word;overflow-wrap:break-word;animation:slideUpPrev ${transTime} ease">
+          ${showRef ? `<div style="font-family:${fontFamily};font-size:${ltRefPx}px;font-weight:700;color:${refColor};letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">${escapeHtml(verse.reference || formatRef(verse))}</div>` : ''}
+          <div style="font-family:${fontFamily};font-size:${ltVersePx}px;line-height:1.5;font-style:italic;color:${textColor};text-shadow:0 2px 8px rgba(0,0,0,0.5);word-break:break-word;overflow-wrap:break-word">&ldquo;${escapeHtml(verse.text)}&rdquo;</div>
+          ${showTrans ? `<div style="font-family:${fontFamily};font-size:${ltTransPx}px;color:rgba(255,255,255,0.45);margin-top:10px;letter-spacing:1px">${escapeHtml(verse.translation || 'KJV')}</div>` : ''}
+        </div>
+      `;
+    } else {
+      innerHtml = `
+        <div style="width:70%;text-align:center;word-break:break-word;overflow-wrap:break-word;animation:fadeInPrev ${transTime} ease">
+          ${showRef ? `<div style="font-family:${fontFamily};font-size:${refPx}px;font-weight:700;color:${refColor};letter-spacing:2px;text-transform:uppercase;margin-bottom:28px">${escapeHtml(verse.reference || formatRef(verse))}</div>` : ''}
+          <div style="font-family:${fontFamily};font-size:${fontPx}px;line-height:1.5;font-style:italic;color:${textColor};text-shadow:0 2px 8px rgba(0,0,0,0.5);word-break:break-word;overflow-wrap:break-word">&ldquo;${escapeHtml(verse.text)}&rdquo;</div>
+          ${showTrans ? `<div style="font-family:${fontFamily};font-size:${transPx}px;color:rgba(255,255,255,0.45);margin-top:24px;letter-spacing:1px">${escapeHtml(verse.translation || 'KJV')}</div>` : ''}
+        </div>
+      `;
+    }
   }
 
   // Build the 1920×1080 virtual projection surface
@@ -201,6 +250,10 @@ function renderProjectionPreview(canvas, verse, blanked) {
     <style>
       @keyframes fadeInPrev {
         from{opacity:0;transform:translateY(10px)}
+        to{opacity:1;transform:translateY(0)}
+      }
+      @keyframes slideUpPrev {
+        from{opacity:0;transform:translateY(20px)}
         to{opacity:1;transform:translateY(0)}
       }
     </style>
