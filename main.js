@@ -193,7 +193,7 @@ function createNdiWindow() {
   ndiWindow = new BrowserWindow({
     x: winX, y: winY, width: winW, height: winH,
     frame: false,
-    alwaysOnTop: true,
+    alwaysOnTop: false,
     title: 'BibleCast — NDI Output',
     backgroundColor: '#000000',
     webPreferences: {
@@ -203,7 +203,7 @@ function createNdiWindow() {
     },
   });
 
-  ndiWindow.loadFile('src/display/display.html');
+  ndiWindow.loadFile('src/display/display.html', { query: { ndi: '1' } });
   ndiWindow.on('closed', () => { ndiWindow = null; });
 }
 
@@ -323,6 +323,9 @@ app.whenReady().then(() => {
       },
     });
   });
+
+  // Clear any persisted verse so preview and projection start fresh each session
+  getDb().updateDisplayState({ current_text: '', current_reference: '', is_visible: 0 });
 
   createOperatorWindow();
   // Display window is NOT created on launch — toggled via Outputs tab
@@ -480,6 +483,7 @@ function registerIpcHandlers() {
       'font_size','theme','text_color','transition_speed','show_translation','show_reference',
       'bg_type','bg_color','bg_gradient_start','bg_gradient_end','bg_image_url',
       'font_family','custom_font_family','auto_fit_text','ref_color','ref_size_ratio',
+      'standby_type','standby_image_url','standby_image_fit','standby_image_opacity',
     ];
     if (displayKeys.includes(key)) {
       const s = getDb().getAllSettings();
@@ -501,6 +505,16 @@ function registerIpcHandlers() {
         autoFitText:      s.auto_fit_text      !== 'false',
         refColor:         s.ref_color          || '',
         refSizeRatio:     parseFloat(s.ref_size_ratio) || 0.45,
+        ltAutoFitText:    s.lt_auto_fit_text   !== 'false',
+        ltBgType:         s.lt_bg_type         || 'solid',
+        ltBgColor:        s.lt_bg_color        || '#000000',
+        ltBgOpacity:      s.lt_bg_opacity      || '0.82',
+        ltBgGradientStart: s.lt_bg_gradient_start || '#000000',
+        ltBgGradientEnd:   s.lt_bg_gradient_end   || '#1a1a1a',
+        standbyType:         s.standby_type          || 'none',
+        standbyImageUrl:     s.standby_image_url     || '',
+        standbyImageFit:     s.standby_image_fit     || 'contain',
+        standbyImageOpacity: s.standby_image_opacity || '100',
       };
       if (displayWindow)    displayWindow.webContents.send('display:update', settingsMsg);
       if (ndiWindow)        ndiWindow.webContents.send('display:update', settingsMsg);
@@ -671,6 +685,40 @@ function registerIpcHandlers() {
     }
   });
 
+  // Builds the full settings payload sent to any display window on init.
+  // Single source of truth — keeps main HDMI and mirror in sync.
+  function buildDisplaySettingsMsg(s, state) {
+    return {
+      type:            'settings',
+      fontSize:        state?.font_size        || s.font_size         || '64',
+      theme:           state?.theme            || s.theme             || 'dark',
+      textColor:       s.text_color            || '#ffffff',
+      transitionSpeed: s.transition_enabled === 'false' ? '0' : (s.transition_speed || '0.5'),
+      showTranslation: s.show_translation      !== 'false',
+      showReference:   s.show_reference        !== 'false',
+      bgType:          s.bg_type               || 'solid',
+      bgColor:         s.bg_color              || '#000000',
+      bgGradientStart: s.bg_gradient_start     || '#0a1628',
+      bgGradientEnd:   s.bg_gradient_end       || '#1a3a5c',
+      bgImageUrl:      s.bg_image_url          || '',
+      fontFamily:      s.font_family           || 'Georgia, serif',
+      customFontFamily:s.custom_font_family    || '',
+      autoFitText:     s.auto_fit_text         !== 'false',
+      refColor:        s.ref_color             || '#e8c97a',
+      refSizeRatio:    s.ref_size_ratio        || '0.45',
+      ltAutoFitText:   s.lt_auto_fit_text      !== 'false',
+      ltBgType:        s.lt_bg_type            || 'solid',
+      ltBgColor:       s.lt_bg_color           || '#000000',
+      ltBgOpacity:     s.lt_bg_opacity         || '0.82',
+      ltBgGradientStart: s.lt_bg_gradient_start || '#000000',
+      ltBgGradientEnd:   s.lt_bg_gradient_end   || '#1a1a1a',
+      standbyType:         s.standby_type          || 'none',
+      standbyImageUrl:     s.standby_image_url     || '',
+      standbyImageFit:     s.standby_image_fit     || 'contain',
+      standbyImageOpacity: s.standby_image_opacity || '100',
+    };
+  }
+
   // Toggle the display window — create on first call, close on second
   ipcMain.handle('display:open', () => {
     if (displayWindow) {
@@ -683,21 +731,7 @@ function registerIpcHandlers() {
     displayWindow.webContents.once('did-finish-load', () => {
       const state = getDb().getDisplayState();
       const s     = getDb().getAllSettings();
-      // Send settings first so theme/font/bg are applied before verse renders
-      displayWindow.webContents.send('display:update', {
-        type:            'settings',
-        fontSize:        state?.font_size       || s.font_size         || '64',
-        theme:           state?.theme           || s.theme             || 'dark',
-        textColor:       s.text_color           || '#ffffff',
-        transitionSpeed: s.transition_speed     || '0.5',
-        showTranslation: s.show_translation     !== 'false',
-        showReference:   s.show_reference       !== 'false',
-        bgType:          s.bg_type              || 'solid',
-        bgColor:         s.bg_color             || '#000000',
-        bgGradientStart: s.bg_gradient_start    || '#0a1628',
-        bgGradientEnd:   s.bg_gradient_end      || '#1a3a5c',
-        bgImageUrl:      s.bg_image_url         || '',
-      });
+      displayWindow.webContents.send('display:update', buildDisplaySettingsMsg(s, state));
       // Apply saved layout
       if (s.hdmi_layout) {
         displayWindow.webContents.send('display:update', { type: 'layout', layout: s.hdmi_layout });
@@ -745,20 +779,7 @@ function registerIpcHandlers() {
         ndiWindow.webContents.once('did-finish-load', () => {
           const state = getDb().getDisplayState();
           const s     = getDb().getAllSettings();
-          ndiWindow.webContents.send('display:update', {
-            type:            'settings',
-            fontSize:        state?.font_size       || s.font_size         || '64',
-            theme:           state?.theme           || s.theme             || 'dark',
-            textColor:       s.text_color           || '#ffffff',
-            transitionSpeed: s.transition_speed     || '0.5',
-            showTranslation: s.show_translation     !== 'false',
-            showReference:   s.show_reference       !== 'false',
-            bgType:          s.bg_type              || 'solid',
-            bgColor:         s.bg_color             || '#000000',
-            bgGradientStart: s.bg_gradient_start    || '#0a1628',
-            bgGradientEnd:   s.bg_gradient_end      || '#1a3a5c',
-            bgImageUrl:      s.bg_image_url         || '',
-          });
+          ndiWindow.webContents.send('display:update', buildDisplaySettingsMsg(s, state));
           if (s.ndi_layout) {
             ndiWindow.webContents.send('display:update', { type: 'layout', layout: s.ndi_layout });
           }
@@ -787,22 +808,7 @@ function registerIpcHandlers() {
         hdmiMirrorWindow.webContents.once('did-finish-load', () => {
           const state = getDb().getDisplayState();
           const s     = getDb().getAllSettings();
-          hdmiMirrorWindow.webContents.send('display:update', {
-            type:            'settings',
-            fontSize:        state?.font_size       || s.font_size         || '64',
-            theme:           state?.theme           || s.theme             || 'dark',
-            textColor:       s.text_color           || '#ffffff',
-            transitionSpeed: s.transition_speed     || '0.5',
-            showTranslation: s.show_translation     !== 'false',
-            showReference:   s.show_reference       !== 'false',
-            bgType:          s.bg_type              || 'solid',
-            bgColor:         s.bg_color             || '#000000',
-            bgGradientStart: s.bg_gradient_start    || '#0a1628',
-            bgGradientEnd:   s.bg_gradient_end      || '#1a3a5c',
-            bgImageUrl:      s.bg_image_url         || '',
-            fontFamily:      s.font_family          || 'Georgia, serif',
-            customFontFamily:s.custom_font_family   || '',
-          });
+          hdmiMirrorWindow.webContents.send('display:update', buildDisplaySettingsMsg(s, state));
           if (s.hdmi_layout) {
             hdmiMirrorWindow.webContents.send('display:update', { type: 'layout', layout: s.hdmi_layout });
           }

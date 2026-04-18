@@ -2,9 +2,21 @@
 
 const api = window.biblecast;
 
-let showReference   = true;
-let showTranslation = true;
-let autoFitEnabled  = true;
+// NDI window: inject a thin drag bar so the frameless window can be moved
+if (new URLSearchParams(window.location.search).get('ndi') === '1') {
+  const bar = document.createElement('div');
+  bar.style.cssText = [
+    'position:fixed', 'top:0', 'left:0', 'right:0', 'height:18px',
+    'z-index:9999', '-webkit-app-region:drag',
+    'background:rgba(0,0,0,0.45)', 'cursor:move',
+  ].join(';');
+  document.addEventListener('DOMContentLoaded', () => document.body.appendChild(bar));
+}
+
+let showReference    = true;
+let showTranslation  = true;
+let autoFitEnabled   = true;
+let autoFitLtEnabled = true;
 
 async function init() {
   // Load display state (current verse / visibility)
@@ -29,11 +41,23 @@ async function init() {
     auto_fit_text:     settings.auto_fit_text,
     ref_color:         settings.ref_color,
     ref_size_ratio:    settings.ref_size_ratio,
+    lt_auto_fit_text:  settings.lt_auto_fit_text,
+    lt_bg_type:        settings.lt_bg_type,
+    lt_bg_color:       settings.lt_bg_color,
+    lt_bg_opacity:     settings.lt_bg_opacity,
+    lt_bg_gradient_start: settings.lt_bg_gradient_start,
+    lt_bg_gradient_end:   settings.lt_bg_gradient_end,
+    standby_type:         settings.standby_type         || 'none',
+    standby_image_url:    settings.standby_image_url    || '',
+    standby_image_fit:    settings.standby_image_fit    || 'contain',
+    standby_image_opacity:settings.standby_image_opacity|| '100',
   });
   applyLayout(settings.hdmi_layout || 'full');
 
   if (state?.current_text && state.is_visible) {
     renderVerse(state.current_reference, state.current_text, state.translation);
+  } else if (state?.current_text) {
+    document.body.classList.add('has-verse');
   }
 
   setBlank(!!state && !state.is_visible && !!state.current_text);
@@ -76,11 +100,22 @@ function handleUpdate(data) {
       auto_fit_text:     data.autoFitText,
       ref_color:         data.refColor,
       ref_size_ratio:    data.refSizeRatio,
+      lt_auto_fit_text:  data.ltAutoFitText,
+      lt_bg_type:        data.ltBgType,
+      lt_bg_color:       data.ltBgColor,
+      lt_bg_opacity:     data.ltBgOpacity,
+      lt_bg_gradient_start: data.ltBgGradientStart,
+      lt_bg_gradient_end:   data.ltBgGradientEnd,
+      standby_type:         data.standbyType,
+      standby_image_url:    data.standbyImageUrl,
+      standby_image_fit:    data.standbyImageFit,
+      standby_image_opacity:data.standbyImageOpacity,
     });
   }
 }
 
 function renderVerse(reference, text, translation) {
+  document.body.classList.add('has-verse');
   const container = document.getElementById('verse-container');
   const refHtml   = showReference
     ? `<div class="verse-reference">${escapeHtml(reference)}</div>`
@@ -95,37 +130,61 @@ function renderVerse(reference, text, translation) {
     ${badgeHtml}
   `;
 
-  if (autoFitEnabled) autoFitText();
+  const isLt = document.body.classList.contains('layout-lower-third');
+  if (isLt ? autoFitLtEnabled : autoFitEnabled) autoFitText();
 }
 
 function autoFitText() {
-  const root         = document.documentElement;
-  const container    = document.getElementById('verse-container');
+  const root      = document.documentElement;
+  const container = document.getElementById('verse-container');
   if (!container) return;
 
-  const isLowerThird = document.body.classList.contains('layout-lower-third');
+  // Freeze transitions for the entire fit pass. A font-size transition from a
+  // previous verse still animating would make getBoundingClientRect() return
+  // mid-animation sizes, causing Phase 2 to step all the way to MIN_PX.
+  // We restore the saved value after the fitted frame is committed.
+  const savedTransition = root.style.getPropertyValue('--transition') || '0.5s';
+  root.style.setProperty('--transition', '0s');
 
-  // Fullscreen: fill up to 70% of screen height.
-  // Lower-third: bar should occupy at most 30% of screen height — it's a
-  // banner, not a full-screen slide. The CSS scales verse text to 0.62×
-  // --font-size so container.scrollHeight already reflects that correctly.
-  const maxH   = window.innerHeight * (isLowerThird ? 0.30 : 0.70);
-  const MIN_PX = 20;
-  const MAX_PX = isLowerThird ? 200 : 400; // lower cap for lower-third
+  const isLowerThird = document.body.classList.contains('layout-lower-third');
+  const vh  = window.innerHeight;
+  const dpr = window.devicePixelRatio || 1;
+
+  // ── Phase 1: binary search using scrollHeight (fast, O log n) ──────────────
+  const safeMargin = isLowerThird ? 0 : Math.max(24, Math.round(vh * 0.035) + (dpr > 1 ? Math.round(dpr * 4) : 0));
+  const maxH = isLowerThird ? Math.round(vh * 0.28) : vh - safeMargin * 2;
+
+  const MIN_PX = 16;
+  const MAX_PX = isLowerThird ? 200 : 400;
   let lo = MIN_PX, hi = MAX_PX, best = MIN_PX;
 
   while (lo <= hi) {
     const mid = Math.floor((lo + hi) / 2);
     root.style.setProperty('--font-size', mid + 'px');
-    if (container.scrollHeight <= maxH) {
-      best = mid;
-      lo   = mid + 1;
-    } else {
-      hi = mid - 1;
+    if (container.scrollHeight <= maxH) { best = mid; lo = mid + 1; }
+    else                                 { hi = mid - 1; }
+  }
+  root.style.setProperty('--font-size', best + 'px');
+
+  // ── Phase 2: bounding-rect verification (synchronous, transitions frozen) ──
+  // Reads actual rendered positions of reference (top) and translation (bottom).
+  // Steps down 1 px until both are confirmed inside the viewport.
+  // Math.floor/ceil guards against sub-pixel bleed on fractional DPR (e.g. 1.25×).
+  if (!isLowerThird) {
+    const refEl   = container.querySelector('.verse-reference');
+    const transEl = container.querySelector('.translation-badge');
+
+    for (let size = best; size >= MIN_PX; size--) {
+      root.style.setProperty('--font-size', size + 'px');
+      const top    = Math.floor((refEl   || container).getBoundingClientRect().top);
+      const bottom = Math.ceil ((transEl || container).getBoundingClientRect().bottom);
+      if (top >= 0 && bottom <= vh) break;
     }
   }
 
-  root.style.setProperty('--font-size', best + 'px');
+  // Restore transitions after the fitted frame is committed so subsequent
+  // settings changes (e.g. font-size slider) still animate smoothly.
+  requestAnimationFrame(() => root.style.setProperty('--transition', savedTransition));
 }
 
 function setBlank(blank) {
@@ -169,11 +228,12 @@ function applySettings(s) {
     document.body.className = 'theme-' + s.theme + (document.body.classList.contains('blanked') ? ' blanked' : '');
   }
 
-  if (s.show_reference  != null) showReference   = s.show_reference  !== false && s.show_reference  !== 'false';
-  if (s.show_translation != null) showTranslation = s.show_translation !== false && s.show_translation !== 'false';
-  if (s.auto_fit_text   != null) autoFitEnabled  = s.auto_fit_text   !== false && s.auto_fit_text   !== 'false';
+  if (s.show_reference   != null) showReference    = s.show_reference   !== false && s.show_reference   !== 'false';
+  if (s.show_translation != null) showTranslation  = s.show_translation !== false && s.show_translation !== 'false';
+  if (s.auto_fit_text    != null) autoFitEnabled   = s.auto_fit_text    !== false && s.auto_fit_text    !== 'false';
+  if (s.lt_auto_fit_text != null) autoFitLtEnabled = s.lt_auto_fit_text !== false && s.lt_auto_fit_text !== 'false';
 
-  // Background
+  // Fullscreen background
   if (s.bg_type === 'solid' && s.bg_color) {
     document.body.style.background = s.bg_color;
   } else if (s.bg_type === 'gradient') {
@@ -183,11 +243,47 @@ function applySettings(s) {
   } else if (s.bg_type === 'image' && s.bg_image_url) {
     document.body.style.background = `url('${s.bg_image_url}') center/cover no-repeat`;
   }
+
+  // Standby screen
+  if (s.standby_type != null) {
+    const standbyImg = document.getElementById('standby-img');
+    if (s.standby_type === 'image' && s.standby_image_url) {
+      if (standbyImg) {
+        standbyImg.src     = s.standby_image_url;
+        standbyImg.style.objectFit = s.standby_image_fit || 'contain';
+        standbyImg.style.opacity   = (Math.max(0, Math.min(100, parseInt(s.standby_image_opacity ?? 100))) / 100).toFixed(2);
+      }
+      document.body.classList.add('has-standby-image');
+    } else {
+      if (standbyImg) standbyImg.src = '';
+      document.body.classList.remove('has-standby-image');
+    }
+  }
+
+  // Lower-third bar background (independent)
+  if (s.lt_bg_type != null) {
+    const opacity = parseFloat(s.lt_bg_opacity ?? 0.82);
+    if (s.lt_bg_type === 'transparent') {
+      root.style.setProperty('--lt-container-bg', 'transparent');
+    } else if (s.lt_bg_type === 'gradient') {
+      const gs = s.lt_bg_gradient_start || '#000000';
+      const ge = s.lt_bg_gradient_end   || '#1a1a1a';
+      root.style.setProperty('--lt-container-bg', `linear-gradient(135deg, ${gs}, ${ge})`);
+    } else if (s.lt_bg_color) {
+      // Parse hex and build rgba so opacity is honoured
+      const hex = s.lt_bg_color.replace('#', '');
+      const r = parseInt(hex.substring(0,2), 16);
+      const g = parseInt(hex.substring(2,4), 16);
+      const b = parseInt(hex.substring(4,6), 16);
+      root.style.setProperty('--lt-container-bg', `rgba(${r},${g},${b},${opacity})`);
+    }
+  }
 }
 
 function applyLayout(layout) {
   document.body.classList.toggle('layout-lower-third', layout === 'lower-third');
-  if (autoFitEnabled) autoFitText();
+  const isLt = layout === 'lower-third';
+  if (isLt ? autoFitLtEnabled : autoFitEnabled) autoFitText();
 }
 
 function escapeHtml(str) {
@@ -199,5 +295,9 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-window.addEventListener('resize', () => { if (autoFitEnabled) autoFitText(); });
+window.addEventListener('resize', () => {
+  const isLt = document.body.classList.contains('layout-lower-third');
+  if (isLt ? autoFitLtEnabled : autoFitEnabled) autoFitText();
+});
+window.addEventListener('keydown', e => { if (e.key === 'Escape') window.close(); });
 document.addEventListener('DOMContentLoaded', init);

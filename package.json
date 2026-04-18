@@ -1,6 +1,6 @@
 {
   "name": "biblecast",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Scripture broadcasting software for presenting and projecting Bible verses in church",
   "main": "main.js",
   "scripts": {

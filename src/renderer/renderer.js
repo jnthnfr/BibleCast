@@ -6,6 +6,7 @@ const api = window.biblecast;
 
 let selectedVerse      = null;
 let isBlank            = false;
+let isProjecting       = false;
 let searchTimeout      = null;
 let activeSession      = null;
 
@@ -287,6 +288,7 @@ async function init() {
   initSegButtons();
   initTransitionSlider();
   initResizeSplitters();
+  initBibleBrowser();
   bindEvents();
   initSpeechRecognition();
   initUpdaterEvents();
@@ -406,10 +408,32 @@ function initSegButtons() {
           if (solidRow) solidRow.style.display = val === 'solid'    ? 'flex'  : 'none';
           if (gradRow)  gradRow.style.display  = val === 'gradient' ? 'block' : 'none';
           if (imgRow)   imgRow.style.display   = val === 'image'    ? 'block' : 'none';
+          liveDisplaySettings();
         }
         if (group.id === 'standby-bg-type') {
-          const row = document.getElementById('standby-bg-url-row');
-          if (row) row.style.display = val === 'image' ? 'flex' : 'none';
+          const solidRow = document.getElementById('standby-bg-solid-row');
+          const gradRow  = document.getElementById('standby-bg-gradient-row');
+          const urlRow   = document.getElementById('standby-bg-url-row');
+          if (solidRow) solidRow.style.display = val === 'solid'    ? 'flex'  : 'none';
+          if (gradRow)  gradRow.style.display  = val === 'gradient' ? 'block' : 'none';
+          if (urlRow)   urlRow.style.display   = val === 'image'    ? 'block' : 'none';
+        }
+
+        if (group.id === 'lt-bg-type') {
+          const solidRow = document.getElementById('lt-bg-solid-row');
+          const gradRow  = document.getElementById('lt-bg-gradient-row');
+          if (solidRow) solidRow.style.display = val === 'solid'    ? 'block' : 'none';
+          if (gradRow)  gradRow.style.display  = val === 'gradient' ? 'block' : 'none';
+          liveDisplaySettings();
+        }
+
+        if (group.id === 'standby-screen-type') {
+          const opts = document.getElementById('standby-image-options');
+          if (opts) opts.style.display = val === 'image' ? 'block' : 'none';
+        }
+
+        if (group.id === 'standby-image-fit') {
+          // No UI row to toggle; just save on settings-save
         }
 
         // HDMI layout — save + send to display window
@@ -1047,40 +1071,25 @@ function detectScriptureRef(text) {
 // ── Search autocomplete ───────────────────────────────────────────────────────
 
 function updateBookAutocomplete() {
-  const input    = document.getElementById('search-input');
-  const dropdown = document.getElementById('search-autocomplete');
-  if (!input || !dropdown) return;
+  const input = document.getElementById('search-input');
+  if (!input) return;
 
-  const val = input.value.trim().toLowerCase();
+  const val    = input.value;
+  const cursor = input.selectionStart;
 
-  // Only show book suggestions when no digits typed yet
-  if (!val || /\d/.test(val)) { dropdown.style.display = 'none'; return; }
+  // Only suggest while typing the book name (no digits yet) and cursor is at end
+  if (!val || /\d/.test(val) || cursor !== val.length) return;
 
-  const matches = BIBLE_BOOKS.filter(b =>
-    b.name.toLowerCase().startsWith(val) ||
-    b.abbrevs.some(a => a.startsWith(val))
-  ).slice(0, 8);
+  const lower = val.toLowerCase();
+  const match = BIBLE_BOOKS.find(b =>
+    b.name.toLowerCase().startsWith(lower) ||
+    b.abbrevs.some(a => a.startsWith(lower))
+  );
 
-  // Hide if no matches or the exact book is already typed
-  if (!matches.length || (matches.length === 1 && matches[0].name.toLowerCase() === val)) {
-    dropdown.style.display = 'none';
-    return;
-  }
+  if (!match || match.name.toLowerCase() === lower) return;
 
-  dropdown.innerHTML = matches.map(b =>
-    `<div class="autocomplete-item" data-name="${escapeHtml(b.name)}">${escapeHtml(b.name)}</div>`
-  ).join('');
-  dropdown.style.display = 'block';
-
-  dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
-    item.addEventListener('mousedown', e => {
-      e.preventDefault(); // keep input focused
-      input.value = item.dataset.name + ' ';
-      dropdown.style.display = 'none';
-      input.focus();
-      doSearch();
-    });
-  });
+  input.value = match.name;
+  input.setSelectionRange(val.length, match.name.length);
 }
 
 const STOP_WORDS = new Set([
@@ -1440,7 +1449,7 @@ async function doSearch(projectFirst = false) {
   if (!query) {
     list.innerHTML = '<div class="no-results">Search for a verse above</div>';
     selectedVerse  = null;
-    updatePushButton();
+    updatePushButton(false);
     return;
   }
 
@@ -1454,7 +1463,7 @@ async function doSearch(projectFirst = false) {
   if (!results.length) {
     list.innerHTML = '<div class="no-results">No verses found</div>';
     selectedVerse  = null;
-    updatePushButton();
+    updatePushButton(false);
     return;
   }
 
@@ -1495,11 +1504,21 @@ function updateStudioPreview(verse) {
   renderProjectionPreview(canvas, verse || null, false);
 }
 
-function updatePushButton() {
+const STOP_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`;
+const PLAY_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+
+function updatePushButton(projecting) {
   const disabled = !selectedVerse;
-  ['push-btn','push-btn-dp'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.disabled = disabled;
+  const label    = projecting ? 'Stop Projecting' : 'Project';
+  const icon     = projecting ? STOP_SVG : PLAY_SVG;
+  [['push-btn','push-btn-label','push-btn-icon'],
+   ['push-btn-dp','push-btn-dp-label','push-btn-dp-icon']].forEach(([btnId, lblId, iconId]) => {
+    const btn = document.getElementById(btnId);
+    const lbl = document.getElementById(lblId);
+    const ico = document.getElementById(iconId);
+    if (btn) { btn.disabled = disabled; btn.classList.toggle('btn-stop', !!projecting); }
+    if (lbl) lbl.textContent = label;
+    if (ico) ico.innerHTML = icon;
   });
   ['next-btn','next-btn-dp','prev-btn','prev-btn-dp'].forEach(id => {
     const el = document.getElementById(id);
@@ -1515,10 +1534,10 @@ function formatRef(v) {
 
 async function pushVerse() {
   if (!selectedVerse) return;
-  isBlank = false;
-  _lastSyncKey = null; // force next sync to re-check state
+  isBlank      = false;
+  isProjecting = true;
+  _lastSyncKey = null;
 
-  // Auto-open display window if it isn't already open
   if (!displayWindowOpen) {
     const r = await api.openDisplay();
     displayWindowOpen = !!r.open;
@@ -1531,18 +1550,55 @@ async function pushVerse() {
   }
 
   await api.pushVerse(verse);
-  updateBlankBtn(false);
+  updatePushButton(true);
   updateLivePreview(verse, false);
   updateLiveBadge(true);
   syncDisplayPreviewLarge(verse);
   await refreshHistory();
 }
 
+async function stopProjecting() {
+  isProjecting = false;
+  isBlank      = true;
+  _lastSyncKey = null;
+  await api.blankDisplay(true);
+  updatePushButton(false);
+  updateLiveBadge(false);
+
+  // Close HDMI display window
+  if (displayWindowOpen) {
+    await api.openDisplay(); // toggles it closed
+    displayWindowOpen = false;
+    updateDisplayBtn();
+  }
+
+  // Close NDI output
+  const ndiToggle = document.getElementById('ndi-toggle');
+  if (ndiToggle?.checked) {
+    await api.openNdiDisplay(false);
+    ndiToggle.checked = false;
+    api.saveSetting('ndi_enabled', 'false');
+  }
+
+  // Close HDMI mirror
+  if (hdmiMirrorOpen) {
+    await api.openHdmiMirror(false);
+    hdmiMirrorOpen = false;
+    const mirrorToggle = document.getElementById('hdmi-mirror-toggle');
+    if (mirrorToggle) mirrorToggle.checked = false;
+    api.saveSetting('hdmi_mirror_enabled', 'false');
+  }
+
+  const lc = document.getElementById('live-canvas');
+  if (lc) renderProjectionPreview(lc, null, true);
+  const dc = document.getElementById('display-canvas');
+  if (dc) renderProjectionPreview(dc, null, true);
+}
+
 async function toggleBlank() {
   isBlank = !isBlank;
   _lastSyncKey = null;
   await api.blankDisplay(isBlank);
-  updateBlankBtn(isBlank);
   updateLiveBadge(!isBlank && !!selectedVerse);
 
   const canvas = document.getElementById('live-canvas');
@@ -1551,14 +1607,6 @@ async function toggleBlank() {
   if (isBlank) {
     const dc = document.getElementById('display-canvas');
     if (dc) dc.innerHTML = '<div class="preview-empty">Display blanked</div>';
-  }
-}
-
-function updateBlankBtn(blanked) {
-  // Reflect blank state in the clear button text
-  const btn = document.getElementById('clear-btn');
-  if (btn) {
-    btn.textContent = blanked ? 'Unblank' : 'Clear';
   }
 }
 
@@ -1595,7 +1643,8 @@ async function syncDisplayState() {
   const visible = state.is_visible === 1;
   isBlank       = !visible;
 
-  updateBlankBtn(isBlank);
+  isProjecting  = visible && !!state.current_text;
+  updatePushButton(isProjecting);
   const projLive = displayWindowOpen && visible && !!state.current_text;
   updateStatusBadge(projLive);
   updateLiveBadge(projLive);
@@ -1732,15 +1781,24 @@ async function refreshHistory(sessionId) {
     return;
   }
 
-  list.innerHTML = verses.map(v => `
-    <div class="history-verse">
+  list.innerHTML = '';
+  verses.forEach(v => {
+    const el = document.createElement('div');
+    el.className = 'history-verse';
+    el.title = 'Click to queue in Studio Preview';
+    el.innerHTML = `
       <div class="history-ref">
         ${escapeHtml(v.reference)}
         <small>${escapeHtml(v.translation)}</small>
       </div>
       <div class="history-text">${escapeHtml(v.text)}</div>
-    </div>
-  `).join('');
+    `;
+    el.addEventListener('click', () => {
+      selectVerse({ reference: v.reference, text: v.text, translation: v.translation, book: v.book, chapter: v.chapter, verse: v.verse });
+      switchView('control');
+    });
+    list.appendChild(el);
+  });
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -1775,15 +1833,47 @@ async function loadAllSettings() {
   const colorEl = document.getElementById('setting-text-color');
   if (colorEl && s.text_color) colorEl.value = s.text_color;
 
-  const transEl = document.getElementById('setting-transition-speed');
+  const transEnabledEl = document.getElementById('setting-transition-enabled');
+  const transEnabled   = s.transition_enabled !== 'false';
+  if (transEnabledEl) transEnabledEl.checked = transEnabled;
+
+  const transEl  = document.getElementById('setting-transition-speed');
   const transLbl = document.getElementById('transition-speed-val');
+  const transRow = document.getElementById('transition-speed-row');
   if (transEl && s.transition_speed) {
     transEl.value = s.transition_speed;
     if (transLbl) transLbl.textContent = parseFloat(s.transition_speed).toFixed(1) + 's';
   }
+  if (transRow) transRow.style.opacity = transEnabled ? '1' : '0.4';
+  if (transEl)  transEl.disabled = !transEnabled;
 
   const autofitEl = document.getElementById('setting-autofit-text');
   if (autofitEl) autofitEl.checked = s.auto_fit_text !== 'false'; // default true
+
+  const ltAutofitEl = document.getElementById('setting-lt-autofit-text');
+  if (ltAutofitEl) ltAutofitEl.checked = s.lt_auto_fit_text !== 'false'; // default true
+
+  // Lower-third bar background
+  if (s.lt_bg_type) setActiveSegBtn('lt-bg-type', s.lt_bg_type);
+  const ltBgColorEl = document.getElementById('setting-lt-bg-color');
+  if (ltBgColorEl && s.lt_bg_color) ltBgColorEl.value = s.lt_bg_color;
+  const ltOpacityEl  = document.getElementById('setting-lt-bg-opacity');
+  const ltOpacityLbl = document.getElementById('lt-bg-opacity-val');
+  if (ltOpacityEl && s.lt_bg_opacity != null) {
+    const pct = Math.round(parseFloat(s.lt_bg_opacity) * 100);
+    ltOpacityEl.value = pct;
+    if (ltOpacityLbl) ltOpacityLbl.textContent = pct + '%';
+  }
+  const ltGradSEl = document.getElementById('setting-lt-bg-grad-start');
+  if (ltGradSEl && s.lt_bg_gradient_start) ltGradSEl.value = s.lt_bg_gradient_start;
+  const ltGradEEl = document.getElementById('setting-lt-bg-grad-end');
+  if (ltGradEEl && s.lt_bg_gradient_end) ltGradEEl.value = s.lt_bg_gradient_end;
+
+  const ltBgType = s.lt_bg_type || 'solid';
+  const ltSolidRow = document.getElementById('lt-bg-solid-row');
+  const ltGradRow  = document.getElementById('lt-bg-gradient-row');
+  if (ltSolidRow) ltSolidRow.style.display = ltBgType === 'solid'    ? 'block' : 'none';
+  if (ltGradRow)  ltGradRow.style.display  = ltBgType === 'gradient' ? 'block' : 'none';
 
   // Reference text style
   const refColorEl = document.getElementById('setting-ref-color');
@@ -1809,8 +1899,9 @@ async function loadAllSettings() {
   const bgUrlEl = document.getElementById('setting-bg-image-url');
   if (bgUrlEl && s.bg_image_url) bgUrlEl.value = s.bg_image_url;
 
-  // Show the correct bg sub-row
-  const bgType = s.bg_type || 'solid';
+  // Show the correct bg sub-row — fall back to solid if image type has no URL
+  const bgType = (s.bg_type === 'image' && !s.bg_image_url) ? 'solid' : (s.bg_type || 'solid');
+  if (bgType !== s.bg_type) setActiveSegBtn('rs-bg-type', bgType);
   const solidRow = document.getElementById('bg-solid-row');
   const gradRow  = document.getElementById('bg-gradient-row');
   const imgRow   = document.getElementById('bg-image-row');
@@ -1887,12 +1978,32 @@ async function loadSettingsView() {
   if (customRow) customRow.style.display = (s.font_family === 'custom') ? 'flex' : 'none';
   setCheckbox('setting-show-translation', s.show_translation !== 'false');
   setCheckbox('setting-show-reference',   s.show_reference   !== 'false');
-  // Standby background — wired to the same keys as the Display tab
-  const bgTypeForStandby = s.bg_type || s.standby_bg_type || 'solid';
+  // Projection background — wired to same keys as Display tab
+  const bgTypeForStandby = s.bg_type || 'solid';
   setActiveSegBtn('standby-bg-type', bgTypeForStandby);
-  const standbyUrlRow = document.getElementById('standby-bg-url-row');
-  if (standbyUrlRow) standbyUrlRow.style.display = bgTypeForStandby === 'image' ? 'flex' : 'none';
-  setInputVal('setting-standby-url', s.bg_image_url || s.standby_url || '');
+  const sbSolidRow = document.getElementById('standby-bg-solid-row');
+  const sbGradRow  = document.getElementById('standby-bg-gradient-row');
+  const sbUrlRow   = document.getElementById('standby-bg-url-row');
+  if (sbSolidRow) sbSolidRow.style.display = bgTypeForStandby === 'solid'    ? 'flex'  : 'none';
+  if (sbGradRow)  sbGradRow.style.display  = bgTypeForStandby === 'gradient' ? 'block' : 'none';
+  if (sbUrlRow)   sbUrlRow.style.display   = bgTypeForStandby === 'image'    ? 'block' : 'none';
+  setInputVal('setting-standby-bg-color',      s.bg_color          || '#000000');
+  setInputVal('setting-standby-bg-grad-start', s.bg_gradient_start || '#0a1628');
+  setInputVal('setting-standby-bg-grad-end',   s.bg_gradient_end   || '#1a3a5c');
+  setInputVal('setting-standby-url',           s.bg_image_url      || '');
+
+  // Standby screen
+  const standbyType = s.standby_type || 'none';
+  setActiveSegBtn('standby-screen-type', standbyType);
+  const standbyOpts = document.getElementById('standby-image-options');
+  if (standbyOpts) standbyOpts.style.display = standbyType === 'image' ? 'block' : 'none';
+  setInputVal('setting-standby-image-url', s.standby_image_url || '');
+  setActiveSegBtn('standby-image-fit', s.standby_image_fit || 'contain');
+  const standbyOpacityEl  = document.getElementById('setting-standby-image-opacity');
+  const standbyOpacityLbl = document.getElementById('standby-opacity-val');
+  const standbyOpacityPct = parseInt(s.standby_image_opacity ?? 100);
+  if (standbyOpacityEl) standbyOpacityEl.value = standbyOpacityPct;
+  if (standbyOpacityLbl) standbyOpacityLbl.textContent = standbyOpacityPct + '%';
   // Session
   setInputVal('setting-default-session-name', s.default_session_name || 'Sunday Morning Service');
   setCheckbox('setting-auto-session',      s.auto_session      === 'true');
@@ -1934,7 +2045,14 @@ async function saveAllSettings() {
     ['show_translation',        getCheckbox('setting-show-translation')],
     ['show_reference',          getCheckbox('setting-show-reference')],
     ['bg_type',                 getActiveSegBtn('standby-bg-type')],
+    ['bg_color',                getInputVal('setting-standby-bg-color')      || '#000000'],
+    ['bg_gradient_start',       getInputVal('setting-standby-bg-grad-start') || '#0a1628'],
+    ['bg_gradient_end',         getInputVal('setting-standby-bg-grad-end')   || '#1a3a5c'],
     ['bg_image_url',            getInputVal('setting-standby-url')],
+    ['standby_type',            getActiveSegBtn('standby-screen-type')       || 'none'],
+    ['standby_image_url',       getInputVal('setting-standby-image-url')     || ''],
+    ['standby_image_fit',       getActiveSegBtn('standby-image-fit')         || 'contain'],
+    ['standby_image_opacity',   getSliderVal('setting-standby-image-opacity') || '100'],
     ['default_session_name',    getInputVal('setting-default-session-name')],
     ['auto_session',            getCheckbox('setting-auto-session')],
     ['clear_transcript',        getCheckbox('setting-clear-transcript')],
@@ -1956,8 +2074,9 @@ async function saveDisplaySettings() {
   const fontSize   = document.getElementById('setting-font-size')?.value;
   const fontFamily = document.getElementById('settings-font-family')?.value;
   const customFont = document.getElementById('setting-custom-font')?.value;
-  const textColor  = document.getElementById('setting-text-color')?.value;
-  const transition = document.getElementById('setting-transition-speed')?.value;
+  const textColor        = document.getElementById('setting-text-color')?.value;
+  const transEnabled     = document.getElementById('setting-transition-enabled')?.checked !== false;
+  const transition       = document.getElementById('setting-transition-speed')?.value;
   const bgType     = document.querySelector('#rs-bg-type .seg-btn.active')?.dataset.val || 'solid';
   const bgColor    = document.getElementById('setting-bg-color')?.value       || '#000000';
   const bgGradS    = document.getElementById('setting-bg-grad-start')?.value  || '#0a1628';
@@ -1967,23 +2086,43 @@ async function saveDisplaySettings() {
   const refColor   = document.getElementById('setting-ref-color')?.value;
   const refSizePct = parseInt(document.getElementById('setting-ref-size')?.value) || 45;
 
-  if (theme)      await api.saveSetting('theme', theme);
-  if (fontSize)   await api.saveSetting('font_size', fontSize);
-  if (fontFamily) await api.saveSetting('font_family', fontFamily);
-  if (customFont !== undefined) await api.saveSetting('custom_font_family', customFont);
-  if (textColor)  await api.saveSetting('text_color', textColor);
-  if (transition !== undefined) await api.saveSetting('transition_speed', transition);
-  await api.saveSetting('bg_type',           bgType);
-  await api.saveSetting('bg_color',          bgColor);
-  await api.saveSetting('bg_gradient_start', bgGradS);
-  await api.saveSetting('bg_gradient_end',   bgGradE);
-  await api.saveSetting('bg_image_url', bgImageUrl);
-  await api.saveSetting('auto_fit_text',   autoFit.toString());
-  if (refColor) await api.saveSetting('ref_color',      refColor);
-  await api.saveSetting('ref_size_ratio', (refSizePct / 100).toFixed(2));
+  const ltAutoFit     = document.getElementById('setting-lt-autofit-text')?.checked !== false;
+  const ltBgType      = document.querySelector('#lt-bg-type .seg-btn.active')?.dataset.val || 'solid';
+  const ltBgColor     = document.getElementById('setting-lt-bg-color')?.value     || '#000000';
+  const ltBgOpacity   = (parseInt(document.getElementById('setting-lt-bg-opacity')?.value ?? 82) / 100).toFixed(2);
+  const ltBgGradS     = document.getElementById('setting-lt-bg-grad-start')?.value || '#000000';
+  const ltBgGradE     = document.getElementById('setting-lt-bg-grad-end')?.value   || '#1a1a1a';
 
-  await loadAllSettings();
-  showToast('Display settings saved');
+  await Promise.all([
+    theme      && api.saveSetting('theme',            theme),
+    fontSize   && api.saveSetting('font_size',        fontSize),
+    fontFamily && api.saveSetting('font_family',      fontFamily),
+    customFont !== undefined && api.saveSetting('custom_font_family', customFont),
+    textColor  && api.saveSetting('text_color',       textColor),
+    api.saveSetting('transition_enabled', transEnabled.toString()),
+    transition !== undefined && api.saveSetting('transition_speed', transition),
+    api.saveSetting('bg_type',            bgType),
+    api.saveSetting('bg_color',           bgColor),
+    api.saveSetting('bg_gradient_start',  bgGradS),
+    api.saveSetting('bg_gradient_end',    bgGradE),
+    api.saveSetting('bg_image_url',       bgImageUrl),
+    api.saveSetting('auto_fit_text',      autoFit.toString()),
+    refColor   && api.saveSetting('ref_color',        refColor),
+    api.saveSetting('ref_size_ratio',     (refSizePct / 100).toFixed(2)),
+    api.saveSetting('lt_auto_fit_text',   ltAutoFit.toString()),
+    api.saveSetting('lt_bg_type',         ltBgType),
+    api.saveSetting('lt_bg_color',        ltBgColor),
+    api.saveSetting('lt_bg_opacity',      ltBgOpacity),
+    api.saveSetting('lt_bg_gradient_start', ltBgGradS),
+    api.saveSetting('lt_bg_gradient_end',   ltBgGradE),
+  ].filter(Boolean));
+
+}
+
+let _displaySaveTimer = null;
+function liveDisplaySettings() {
+  clearTimeout(_displaySaveTimer);
+  _displaySaveTimer = setTimeout(saveDisplaySettings, 300);
 }
 
 async function resetDefaults() {
@@ -2035,6 +2174,112 @@ function showToast(msg) {
 
 // ── Event binding ─────────────────────────────────────────────────────────────
 
+// ── Bible browser ─────────────────────────────────────────────────────────────
+
+// Chapter counts for all 66 books (canonical order matches BIBLE_BOOKS)
+const BIBLE_CHAPTER_COUNTS = [
+  50,40,27,36,34,24,21,4,31,24,22,25,29,36,10,13,10,42,150,31,
+  12,8,66,52,5,48,12,14,3,9,1,4,7,3,3,3,2,14,4,
+  28,16,24,21,28,16,16,13,6,6,4,4,5,3,6,4,3,1,13,5,5,3,5,1,1,1,4,3,5,3
+];
+
+let bbSelectedBook = null;
+let bbSelectedChapter = null;
+
+function initBibleBrowser() {
+  const booksEl    = document.getElementById('bb-books');
+  const chaptersEl = document.getElementById('bb-chapters');
+  const versesEl   = document.getElementById('bb-verses');
+  const navEl      = document.getElementById('bb-nav');
+  const crumbEl    = document.getElementById('bb-crumb');
+  const backBtn    = document.getElementById('bb-back-btn');
+  const backLbl    = document.getElementById('bb-back-label');
+
+  // Populate book grid
+  BIBLE_BOOKS.forEach((book, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = book.name;
+    btn.addEventListener('click', () => showChapters(book, i));
+    booksEl.appendChild(btn);
+  });
+
+  function showChapters(book, bookIdx) {
+    bbSelectedBook    = book;
+    bbSelectedChapter = null;
+    chaptersEl.innerHTML = '';
+    const count = BIBLE_CHAPTER_COUNTS[bookIdx] || 50;
+    for (let c = 1; c <= count; c++) {
+      const btn = document.createElement('button');
+      btn.textContent = c;
+      btn.addEventListener('click', () => showVerses(book, c));
+      chaptersEl.appendChild(btn);
+    }
+    booksEl.style.display    = 'none';
+    chaptersEl.style.display = 'flex';
+    versesEl.style.display   = 'none';
+    navEl.style.display      = 'flex';
+    crumbEl.textContent      = book.name;
+    backLbl.textContent      = 'Books';
+  }
+
+  async function showVerses(book, chapter) {
+    bbSelectedChapter = chapter;
+    const translation = document.getElementById('translation-select')?.value || 'KJV';
+    const query       = `${book.name} ${chapter}`;
+    const results     = await api.searchVerses(query, translation);
+
+    versesEl.innerHTML = '';
+    if (!results.length) {
+      versesEl.innerHTML = '<div style="padding:6px;font-size:0.78rem;color:var(--text-muted)">No verses found</div>';
+    } else {
+      results.forEach(v => {
+        const item = document.createElement('div');
+        item.className = 'bb-verse-item';
+        item.innerHTML = `<div class="bb-vref">${escapeHtml(v.reference || formatRef(v))}</div><div class="bb-vtxt">${escapeHtml(v.text)}</div>`;
+        item.addEventListener('click', () => {
+          document.querySelectorAll('.result-item').forEach(i => i.classList.remove('selected'));
+          selectVerse(v, null);
+          // Mirror selection into the main results list
+          const input = document.getElementById('search-input');
+          if (input) input.value = v.reference || formatRef(v);
+        });
+        versesEl.appendChild(item);
+      });
+    }
+
+    chaptersEl.style.display = 'none';
+    versesEl.style.display   = 'block';
+    crumbEl.textContent      = `${book.name} ${chapter}`;
+    backLbl.textContent      = book.name;
+  }
+
+  backBtn.addEventListener('click', () => {
+    if (versesEl.style.display !== 'none') {
+      // Back to chapters
+      versesEl.style.display   = 'none';
+      chaptersEl.style.display = 'flex';
+      crumbEl.textContent      = bbSelectedBook?.name || '';
+      backLbl.textContent      = 'Books';
+    } else {
+      // Back to books
+      chaptersEl.style.display = 'none';
+      booksEl.style.display    = 'flex';
+      navEl.style.display      = 'none';
+      crumbEl.textContent      = '';
+      bbSelectedBook    = null;
+      bbSelectedChapter = null;
+    }
+  });
+
+  document.getElementById('browse-toggle-btn')?.addEventListener('click', () => {
+    const browser = document.getElementById('bible-browser');
+    const btn     = document.getElementById('browse-toggle-btn');
+    const hidden  = browser.style.display === 'none';
+    browser.style.display = hidden ? 'block' : 'none';
+    btn.textContent       = hidden ? 'Hide' : 'Show';
+  });
+}
+
 function bindEvents() {
   // Sidebar nav
   document.querySelectorAll('.nav-item[data-view]').forEach(item => {
@@ -2049,54 +2294,44 @@ function bindEvents() {
   // Search
   document.getElementById('search-input')?.addEventListener('input', onSearchInput);
   document.getElementById('search-input')?.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-      document.getElementById('search-autocomplete').style.display = 'none';
+    const input = document.getElementById('search-input');
+    const hasSuggestion = input && input.selectionStart < input.selectionEnd;
+    if (e.key === 'Tab' || e.key === 'ArrowRight') {
+      if (hasSuggestion) {
+        e.preventDefault();
+        const end = input.value.length;
+        input.value = input.value + ' ';
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    } else if (e.key === 'Escape') {
+      if (hasSuggestion) {
+        input.value = input.value.substring(0, input.selectionStart);
+      }
     } else if (e.key === 'Enter') {
-      document.getElementById('search-autocomplete').style.display = 'none';
+      if (hasSuggestion) {
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
       doSearch(true);
     }
-  });
-  document.getElementById('search-input')?.addEventListener('blur', () => {
-    setTimeout(() => {
-      const d = document.getElementById('search-autocomplete');
-      if (d) d.style.display = 'none';
-    }, 150);
   });
   document.getElementById('translation-select')?.addEventListener('change', doSearch);
   document.getElementById('find-btn')?.addEventListener('click', doSearch);
 
-  // Display controls — primary (Live Output panel)
-  document.getElementById('push-btn')?.addEventListener('click', pushVerse);
+  // Display controls — Studio Preview (primary) + Display Preview view
+  document.getElementById('push-btn')?.addEventListener('click', () => isProjecting ? stopProjecting() : pushVerse());
   document.getElementById('next-btn')?.addEventListener('click', () => navigateVerse('next'));
   document.getElementById('prev-btn')?.addEventListener('click', () => navigateVerse('prev'));
 
-  // Display controls — Display Preview view (identical behaviour)
-  document.getElementById('push-btn-dp')?.addEventListener('click', pushVerse);
+  document.getElementById('push-btn-dp')?.addEventListener('click', () => isProjecting ? stopProjecting() : pushVerse());
   document.getElementById('next-btn-dp')?.addEventListener('click', () => navigateVerse('next'));
   document.getElementById('prev-btn-dp')?.addEventListener('click', () => navigateVerse('prev'));
 
-  // Shared clear handler used by both clear buttons
-  async function handleClear() {
-    if (!isBlank) {
-      isBlank = true;
-      await api.blankDisplay(true);
-      updateBlankBtn(true);
-      updateLiveBadge(false);
-      updateStatusBadge(false);
-      const lc = document.getElementById('live-canvas');
-      if (lc) renderProjectionPreview(lc, null, true);
-      const dc = document.getElementById('display-canvas');
-      if (dc) renderProjectionPreview(dc, null, true);
-    }
-    // Forcefully close the projection window
-    if (displayWindowOpen) {
-      const result = await api.openDisplay();
-      displayWindowOpen = !!result.open;
-      updateDisplayBtn(); // also unchecks hdmi-toggle
-    }
-  }
-  document.getElementById('clear-btn')?.addEventListener('click', handleClear);
-  document.getElementById('clear-btn-dp')?.addEventListener('click', handleClear);
+  // Arrow key verse navigation — skip when focus is inside a text input
+  document.addEventListener('keydown', e => {
+    if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+    if (e.key === 'ArrowRight') navigateVerse('next');
+    if (e.key === 'ArrowLeft')  navigateVerse('prev');
+  });
 
   // Top bar toggles
   document.getElementById('listen-btn')?.addEventListener('click', toggleListening);
@@ -2125,50 +2360,87 @@ function bindEvents() {
     if (e.key === 'Enter') createSession();
   });
 
-  // Right sidebar Display pane
-  document.getElementById('save-settings-btn')?.addEventListener('click', saveDisplaySettings);
-
+  // Right sidebar Display pane — all changes apply instantly
+  document.getElementById('setting-theme')?.addEventListener('change', liveDisplaySettings);
   document.getElementById('settings-font-family')?.addEventListener('change', e => {
     const customRow = document.getElementById('custom-font-row');
     if (customRow) customRow.style.display = e.target.value === 'custom' ? 'flex' : 'none';
+    liveDisplaySettings();
   });
-
+  document.getElementById('setting-custom-font')?.addEventListener('change', liveDisplaySettings);
   document.getElementById('settings-font-size')?.addEventListener('input', e => {
     const lbl = document.getElementById('settings-font-size-val');
     if (lbl) lbl.textContent = e.target.value + 'px';
+    liveDisplaySettings();
   });
+  document.getElementById('setting-text-color')?.addEventListener('input', liveDisplaySettings);
   document.getElementById('reset-color-btn')?.addEventListener('click', () => {
     const colorEl = document.getElementById('setting-text-color');
     if (colorEl) colorEl.value = '#ffffff';
+    liveDisplaySettings();
   });
+  document.getElementById('setting-transition-enabled')?.addEventListener('change', e => {
+    const enabled  = e.target.checked;
+    const row      = document.getElementById('transition-speed-row');
+    const slider   = document.getElementById('setting-transition-speed');
+    if (row)    row.style.opacity  = enabled ? '1' : '0.4';
+    if (slider) slider.disabled    = !enabled;
+    liveDisplaySettings();
+  });
+  document.getElementById('setting-transition-speed')?.addEventListener('input', liveDisplaySettings);
+  document.getElementById('setting-autofit-text')?.addEventListener('change', liveDisplaySettings);
+  document.getElementById('setting-bg-color')?.addEventListener('input', liveDisplaySettings);
+  document.getElementById('setting-bg-grad-start')?.addEventListener('input', liveDisplaySettings);
+  document.getElementById('setting-bg-grad-end')?.addEventListener('input', liveDisplaySettings);
+  document.getElementById('setting-bg-image-url')?.addEventListener('change', liveDisplaySettings);
+  document.getElementById('setting-ref-color')?.addEventListener('input', liveDisplaySettings);
   document.getElementById('reset-ref-color-btn')?.addEventListener('click', () => {
     const el = document.getElementById('setting-ref-color');
     if (el) el.value = '#e8c97a';
+    liveDisplaySettings();
   });
   document.getElementById('setting-font-size')?.addEventListener('input', e => {
     const lbl = document.getElementById('display-font-size-val');
     if (lbl) lbl.textContent = e.target.value + 'px';
+    liveDisplaySettings();
   });
   document.getElementById('setting-ref-size')?.addEventListener('input', e => {
     const lbl = document.getElementById('ref-size-val');
     if (lbl) lbl.textContent = e.target.value + '%';
+    liveDisplaySettings();
   });
 
-  // Background color presets
+  // Lower-third settings
+  document.getElementById('setting-lt-autofit-text')?.addEventListener('change', liveDisplaySettings);
+  document.getElementById('setting-lt-bg-color')?.addEventListener('input', liveDisplaySettings);
+  document.getElementById('setting-lt-bg-opacity')?.addEventListener('input', e => {
+    const lbl = document.getElementById('lt-bg-opacity-val');
+    if (lbl) lbl.textContent = e.target.value + '%';
+    liveDisplaySettings();
+  });
+  document.getElementById('setting-lt-bg-grad-start')?.addEventListener('input', liveDisplaySettings);
+  document.getElementById('setting-lt-bg-grad-end')?.addEventListener('input', liveDisplaySettings);
+
+  // Color presets — data-target selects which input to update
   document.querySelectorAll('.color-preset').forEach(btn => {
     btn.addEventListener('click', () => {
-      const colorEl = document.getElementById('setting-bg-color');
+      const targetId = btn.dataset.target || 'setting-bg-color';
+      const colorEl  = document.getElementById(targetId);
       if (colorEl) colorEl.value = btn.dataset.color;
+      if (targetId === 'setting-bg-color') liveDisplaySettings();
     });
   });
 
-  // Gradient presets
+  // Gradient presets — data-target-start/end selects which inputs to update
   document.querySelectorAll('.grad-preset').forEach(btn => {
     btn.addEventListener('click', () => {
-      const startEl = document.getElementById('setting-bg-grad-start');
-      const endEl   = document.getElementById('setting-bg-grad-end');
+      const startId = btn.dataset.targetStart || 'setting-bg-grad-start';
+      const endId   = btn.dataset.targetEnd   || 'setting-bg-grad-end';
+      const startEl = document.getElementById(startId);
+      const endEl   = document.getElementById(endId);
       if (startEl) startEl.value = btn.dataset.start;
       if (endEl)   endEl.value   = btn.dataset.end;
+      if (startId === 'setting-bg-grad-start') liveDisplaySettings();
     });
   });
 
@@ -2179,14 +2451,73 @@ function bindEvents() {
   document.getElementById('bg-file-input')?.addEventListener('change', async e => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const result = await api.saveBackgroundImage(file.path);
+    const result = await api.saveBackgroundImage(file);
     if (result.ok) {
+      // Set URL in input
       const urlEl = document.getElementById('setting-bg-image-url');
       if (urlEl) urlEl.value = result.filePath;
-      showToast('Image uploaded');
+      // Switch bg type to image and show the image row
+      document.querySelectorAll('#rs-bg-type .seg-btn').forEach(b => b.classList.remove('active'));
+      const imgBtn = document.querySelector('#rs-bg-type .seg-btn[data-val="image"]');
+      if (imgBtn) imgBtn.classList.add('active');
+      document.getElementById('bg-solid-row').style.display    = 'none';
+      document.getElementById('bg-gradient-row').style.display = 'none';
+      document.getElementById('bg-image-row').style.display    = 'block';
+      // Save and broadcast to display immediately (bypass debounce)
+      await saveDisplaySettings();
+      showToast('Background image applied');
     } else {
       showToast('Upload failed: ' + result.error);
     }
+  });
+
+  // Settings panel background image upload
+  document.getElementById('standby-bg-upload-btn')?.addEventListener('click', () => {
+    document.getElementById('standby-bg-file-input')?.click();
+  });
+  document.getElementById('standby-bg-file-input')?.addEventListener('change', async e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const result = await api.saveBackgroundImage(file);
+    if (result.ok) {
+      const urlEl = document.getElementById('setting-standby-url');
+      if (urlEl) urlEl.value = result.filePath;
+      document.querySelectorAll('#standby-bg-type .seg-btn').forEach(b => b.classList.remove('active'));
+      const imgBtn = document.querySelector('#standby-bg-type .seg-btn[data-val="image"]');
+      if (imgBtn) imgBtn.classList.add('active');
+      document.getElementById('standby-bg-solid-row').style.display    = 'none';
+      document.getElementById('standby-bg-gradient-row').style.display = 'none';
+      document.getElementById('standby-bg-url-row').style.display      = 'block';
+      showToast('Background image selected — save settings to apply');
+    } else {
+      showToast('Upload failed: ' + result.error);
+    }
+  });
+
+  // Standby logo/image upload
+  document.getElementById('standby-image-upload-btn')?.addEventListener('click', () => {
+    document.getElementById('standby-image-file-input')?.click();
+  });
+  document.getElementById('standby-image-file-input')?.addEventListener('change', async e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const result = await api.saveBackgroundImage(file);
+    if (result.ok) {
+      const urlEl = document.getElementById('setting-standby-image-url');
+      if (urlEl) urlEl.value = result.filePath;
+      setActiveSegBtn('standby-screen-type', 'image');
+      const opts = document.getElementById('standby-image-options');
+      if (opts) opts.style.display = 'block';
+      showToast('Standby image selected — save settings to apply');
+    } else {
+      showToast('Upload failed: ' + result.error);
+    }
+  });
+
+  // Standby opacity slider
+  document.getElementById('setting-standby-image-opacity')?.addEventListener('input', e => {
+    const lbl = document.getElementById('standby-opacity-val');
+    if (lbl) lbl.textContent = e.target.value + '%';
   });
 
   // Right sidebar Outputs pane — toggle display window
@@ -2254,8 +2585,9 @@ function bindEvents() {
       updateStatusBadge(true);
       syncDisplayPreviewLarge(v);
     } else if (data.type === 'blank') {
-      isBlank = !data.visible;
-      updateBlankBtn(isBlank);
+      isBlank      = !data.visible;
+      isProjecting = data.visible && !!selectedVerse;
+      updatePushButton(isProjecting);
       updateLiveBadge(data.visible && !!selectedVerse);
       updateStatusBadge(data.visible && !!selectedVerse);
       const canvas = document.getElementById('live-canvas');
