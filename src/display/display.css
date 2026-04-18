@@ -12,6 +12,9 @@
   /* Theme text defaults (overridden per theme) */
   --ref-color:   #e8c97a;
   --badge-color: rgba(255,255,255,0.45);
+
+  /* Lower-third bar background (independent of fullscreen bg) */
+  --lt-container-bg: rgba(0, 0, 0, 0.82);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -49,10 +52,11 @@ body.theme-blue {
 
 /* ── Verse container ── */
 .verse-container {
-  width: 70%;             /* matches operator preview content area */
-  max-width: 70%;
+  width: 90%;
+  max-width: 90%;
   text-align: center;
-  padding: 0;
+  /* vertical padding keeps reference (top) and translation (bottom) clear of edges */
+  padding: 28px 2%;
   word-break: break-word;
   overflow-wrap: break-word;
   animation: fadeIn var(--transition) ease;
@@ -123,7 +127,7 @@ body.layout-lower-third .verse-container {
   width: 100%;
   max-width: 100%;
   padding: 24px 80px 48px;
-  background: rgba(0, 0, 0, 0.82);
+  background: var(--lt-container-bg);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   text-align: left;
@@ -147,7 +151,34 @@ body.layout-lower-third .translation-badge {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Idle (no verse yet) ── */
+/* ── Standby / idle screen ── */
+.standby-screen {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  pointer-events: none;
+  transition: opacity var(--transition) ease;
+}
+
+body.has-verse .standby-screen {
+  opacity: 0;
+}
+
+.standby-img {
+  display: none;
+  max-width: 70%;
+  max-height: 70%;
+  object-fit: contain;
+  animation: fadeIn var(--transition) ease;
+}
+
+body.has-standby-image .standby-img  { display: block; }
+body.has-standby-image .idle-message { display: none; }
+
 .idle-message {
   font-size: 1.2rem;
   color: rgba(255,255,255,0.12);

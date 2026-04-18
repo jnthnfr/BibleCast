@@ -596,6 +596,8 @@ html, body {
 }
 .btn-project:hover:not(:disabled) { background: #15803d; }
 .btn-project:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-project.btn-stop { background: #dc2626; }
+.btn-project.btn-stop:hover:not(:disabled) { background: #b91c1c; }
 
 .btn-clear {
   background: var(--surface-2);
@@ -948,7 +950,10 @@ input[type=number]:focus,
 .history-verse {
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
+.history-verse:hover { background: var(--surface-2); }
 .history-verse:last-child { border-bottom: none; }
 .history-ref { font-size: 0.76rem; font-weight: 700; color: var(--accent); }
 .history-ref small { font-weight: 400; color: var(--text-muted); margin-left: 6px; }
@@ -1287,6 +1292,12 @@ input[type=number]:focus,
 }
 
 /* ── RS Display tab field styles ─────────────────── */
+.rs-section-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0 0;
+}
+
 .rs-section-hdr {
   font-size: 0.62rem;
   text-transform: uppercase;
@@ -1414,31 +1425,60 @@ input[type=number]:focus,
 select { cursor: pointer; }
 button { cursor: pointer; }
 
-/* ── Search autocomplete dropdown ───────────────── */
-.search-autocomplete {
-  display: none;
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 0;
-  right: 36px; /* leave room for Find button */
+/* ── Bible browser ───────────────────────────────── */
+.bb-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.bb-grid button {
+  font-size: 0.72rem;
+  padding: 4px 7px;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-  z-index: 200;
-  overflow: hidden;
-}
-.autocomplete-item {
-  padding: 7px 11px;
-  font-size: 0.82rem;
+  border-radius: 4px;
   color: var(--text);
   cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+  white-space: nowrap;
+}
+.bb-grid button:hover { background: var(--surface3); border-color: var(--accent); color: var(--accent); }
+.bb-grid button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.bb-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.bb-back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  padding: 3px 8px;
+}
+.bb-crumb {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.bb-vlist {
+  margin-top: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.bb-verse-item {
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  line-height: 1.4;
   transition: background 0.1s;
 }
-.autocomplete-item:hover {
-  background: var(--surface3);
-  color: var(--accent);
-}
+.bb-verse-item:hover { background: var(--surface2); }
+.bb-verse-item .bb-vref { font-weight: 600; color: var(--accent); font-size: 0.72rem; margin-bottom: 2px; }
+.bb-verse-item .bb-vtxt { color: var(--text-muted); }
 
 /* Vosk model loading spinner */
 @keyframes vosk-spin {

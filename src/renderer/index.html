@@ -121,6 +121,18 @@
                   <div class="preview-placeholder">Search for a verse to queue</div>
                 </div>
               </div>
+              <div class="output-controls">
+                <button id="prev-btn" class="btn-clear" disabled title="Previous Verse">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <button id="push-btn" class="btn-project" disabled>
+                  <span id="push-btn-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
+                  <span id="push-btn-label">Project</span>
+                </button>
+                <button id="next-btn" class="btn-clear" disabled title="Next Verse">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
             </div>
 
             <!-- SPLITTER: Studio ↔ Live Output -->
@@ -136,19 +148,6 @@
                 <div id="live-canvas" class="preview-canvas">
                   <div class="preview-empty">No verse on display</div>
                 </div>
-              </div>
-              <div class="output-controls">
-                <button id="prev-btn" class="btn-clear" disabled title="Previous Verse">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-                </button>
-                <button id="push-btn" class="btn-project" disabled>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                  Project
-                </button>
-                <button id="next-btn" class="btn-clear" disabled title="Next Verse">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-                </button>
-                <button id="clear-btn" class="btn-clear">Clear</button>
               </div>
             </div>
 
@@ -217,7 +216,6 @@
             <div class="search-row" style="position:relative">
               <input id="search-input" type="text" placeholder="e.g. John 3 16 · Ps 23 1" autocomplete="off" spellcheck="false" />
               <button id="find-btn" class="btn btn-primary btn-sm">Find</button>
-              <div id="search-autocomplete" class="search-autocomplete"></div>
             </div>
             <select id="translation-select" class="rs-dropdown"></select>
 
@@ -226,6 +224,24 @@
 
             <div id="results-list" class="results-list">
               <div class="no-results">Search for a verse above</div>
+            </div>
+
+            <hr class="rs-divider" style="margin-top:10px" />
+            <div class="rs-field-lbl-row" style="margin-bottom:4px">
+              <span class="rs-field-lbl" style="margin:0">BROWSE BIBLE</span>
+              <button id="browse-toggle-btn" class="btn btn-secondary btn-sm" style="font-size:0.7rem;padding:3px 8px">Show</button>
+            </div>
+            <div id="bible-browser" style="display:none">
+              <div id="bb-books" class="bb-grid"></div>
+              <div id="bb-nav" class="bb-nav" style="display:none">
+                <button id="bb-back-btn" class="btn btn-secondary btn-sm bb-back">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                  <span id="bb-back-label">Books</span>
+                </button>
+                <span id="bb-crumb" class="bb-crumb"></span>
+              </div>
+              <div id="bb-chapters" class="bb-grid" style="display:none"></div>
+              <div id="bb-verses" class="bb-vlist" style="display:none"></div>
             </div>
 
             <hr class="rs-divider" style="margin-top:10px" />
@@ -275,14 +291,23 @@
               <button id="reset-color-btn" class="btn btn-secondary btn-sm">Reset to Default</button>
             </div>
 
-            <div class="rs-field-lbl-row">
-              <span class="rs-field-lbl" style="margin:0">TRANSITION SPEED</span>
-              <span id="transition-speed-val" class="rs-field-val">0.8s</span>
+            <div class="rs-field-lbl-row" style="margin-bottom:6px">
+              <span class="rs-field-lbl" style="margin:0">TRANSITIONS</span>
+              <label class="toggle-wrap">
+                <input type="checkbox" id="setting-transition-enabled" checked>
+                <span class="toggle-track"></span>
+              </label>
             </div>
-            <input type="range" id="setting-transition-speed" min="0" max="5" step="0.1" value="0.8" class="full-slider" />
-            <div class="slider-range-labels">
-              <span>0s (Instant)</span>
-              <span>5s (Slow)</span>
+            <div id="transition-speed-row">
+              <div class="rs-field-lbl-row">
+                <span class="rs-field-lbl" style="margin:0">TRANSITION SPEED</span>
+                <span id="transition-speed-val" class="rs-field-val">0.8s</span>
+              </div>
+              <input type="range" id="setting-transition-speed" min="0" max="5" step="0.1" value="0.8" class="full-slider" />
+              <div class="slider-range-labels">
+                <span>0s (Instant)</span>
+                <span>5s (Slow)</span>
+              </div>
             </div>
 
             <div class="rs-field-lbl">BACKGROUND</div>
@@ -295,12 +320,12 @@
             <!-- Solid color row -->
             <div id="bg-solid-row" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px">
               <input type="color" id="setting-bg-color" value="#000000" class="color-swatch" title="Pick background color" />
-              <button class="color-preset" data-color="#000000" style="background:#000000" title="Black"></button>
-              <button class="color-preset" data-color="#0a1628" style="background:#0a1628" title="Navy"></button>
-              <button class="color-preset" data-color="#1a0a0a" style="background:#1a0a0a" title="Dark Red"></button>
-              <button class="color-preset" data-color="#0a1a0a" style="background:#0a1a0a" title="Forest"></button>
-              <button class="color-preset" data-color="#1a1a2e" style="background:#1a1a2e" title="Deep Purple"></button>
-              <button class="color-preset" data-color="#ffffff" style="background:#ffffff;outline:1px solid #555" title="White"></button>
+              <button class="color-preset" data-color="#000000" data-target="setting-bg-color" style="background:#000000" title="Black"></button>
+              <button class="color-preset" data-color="#0a1628" data-target="setting-bg-color" style="background:#0a1628" title="Navy"></button>
+              <button class="color-preset" data-color="#1a0a0a" data-target="setting-bg-color" style="background:#1a0a0a" title="Dark Red"></button>
+              <button class="color-preset" data-color="#0a1a0a" data-target="setting-bg-color" style="background:#0a1a0a" title="Forest"></button>
+              <button class="color-preset" data-color="#1a1a2e" data-target="setting-bg-color" style="background:#1a1a2e" title="Deep Purple"></button>
+              <button class="color-preset" data-color="#ffffff" data-target="setting-bg-color" style="background:#ffffff;outline:1px solid #555" title="White"></button>
             </div>
 
             <!-- Gradient row -->
@@ -311,10 +336,10 @@
                 <input type="color" id="setting-bg-grad-end" value="#1a3a5c" class="color-swatch" title="Gradient end" />
               </div>
               <div class="grad-presets">
-                <button class="grad-preset" data-start="#0a1628" data-end="#1a3a5c" style="background:linear-gradient(135deg,#0a1628,#1a3a5c)" title="Ocean"></button>
-                <button class="grad-preset" data-start="#1a0010" data-end="#6b0030" style="background:linear-gradient(135deg,#1a0010,#6b0030)" title="Crimson"></button>
-                <button class="grad-preset" data-start="#000000" data-end="#2c2c2c" style="background:linear-gradient(135deg,#000,#2c2c2c)" title="Midnight"></button>
-                <button class="grad-preset" data-start="#0d0d2b" data-end="#2b1d4e" style="background:linear-gradient(135deg,#0d0d2b,#2b1d4e)" title="Deep Space"></button>
+                <button class="grad-preset" data-start="#0a1628" data-end="#1a3a5c" data-target-start="setting-bg-grad-start" data-target-end="setting-bg-grad-end" style="background:linear-gradient(135deg,#0a1628,#1a3a5c)" title="Ocean"></button>
+                <button class="grad-preset" data-start="#1a0010" data-end="#6b0030" data-target-start="setting-bg-grad-start" data-target-end="setting-bg-grad-end" style="background:linear-gradient(135deg,#1a0010,#6b0030)" title="Crimson"></button>
+                <button class="grad-preset" data-start="#000000" data-end="#2c2c2c" data-target-start="setting-bg-grad-start" data-target-end="setting-bg-grad-end" style="background:linear-gradient(135deg,#000,#2c2c2c)" title="Midnight"></button>
+                <button class="grad-preset" data-start="#0d0d2b" data-end="#2b1d4e" data-target-start="setting-bg-grad-start" data-target-end="setting-bg-grad-end" style="background:linear-gradient(135deg,#0d0d2b,#2b1d4e)" title="Deep Space"></button>
               </div>
             </div>
 
@@ -340,9 +365,52 @@
               <span>100% (Same as verse)</span>
             </div>
 
-            <button id="save-settings-btn" class="btn btn-primary" style="margin-top:16px;width:100%">
-              Apply
-            </button>
+            <!-- ── Lower Third Settings ── -->
+            <div class="rs-section-divider"></div>
+            <div class="rs-section-hdr" style="margin-top:14px">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="14" width="20" height="7" rx="1"/></svg>
+              Lower Third
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;margin-bottom:4px">
+              <div>
+                <div class="rs-field-lbl" style="margin:0">AUTO-FIT TEXT</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">Scale lower-third text independently</div>
+              </div>
+              <label class="toggle-wrap">
+                <input type="checkbox" id="setting-lt-autofit-text" checked>
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+
+            <div class="rs-field-lbl" style="margin-top:10px">BAR BACKGROUND</div>
+            <div class="seg-btns" id="lt-bg-type">
+              <button class="seg-btn active" data-val="solid">Solid</button>
+              <button class="seg-btn" data-val="gradient">Gradient</button>
+              <button class="seg-btn" data-val="transparent">None</button>
+            </div>
+
+            <!-- LT solid row -->
+            <div id="lt-bg-solid-row" style="margin-top:8px">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <input type="color" id="setting-lt-bg-color" value="#000000" class="color-swatch" title="Bar color" />
+                <div style="flex:1;min-width:120px">
+                  <div style="display:flex;justify-content:space-between;font-size:0.72rem;color:var(--text-muted);margin-bottom:2px">
+                    <span>OPACITY</span><span id="lt-bg-opacity-val">82%</span>
+                  </div>
+                  <input type="range" id="setting-lt-bg-opacity" min="0" max="100" step="1" value="82" class="full-slider" />
+                </div>
+              </div>
+            </div>
+
+            <!-- LT gradient row -->
+            <div id="lt-bg-gradient-row" style="display:none;margin-top:8px">
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="color" id="setting-lt-bg-grad-start" value="#000000" class="color-swatch" title="Gradient start" />
+                <span style="color:var(--text-muted);font-size:11px">→</span>
+                <input type="color" id="setting-lt-bg-grad-end" value="#1a1a1a" class="color-swatch" title="Gradient end" />
+              </div>
+            </div>
 
           </div>
 
@@ -494,13 +562,12 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <button id="push-btn-dp" class="btn-project" disabled>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Project
+            <span id="push-btn-dp-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
+            <span id="push-btn-dp-label">Project</span>
           </button>
           <button id="next-btn-dp" class="btn-clear" disabled title="Next Verse">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
-          <button id="clear-btn-dp" class="btn-clear">Clear</button>
         </div>
 
       </div>
@@ -747,23 +814,86 @@
                 <span class="toggle-track"></span>
               </label>
             </div>
-            <div class="setting-row">
-              <div class="setting-info">
-                <div class="setting-name">Projection background</div>
-                <div class="setting-desc">Background type used on the projection display (same as Display tab)</div>
+            <div class="setting-row-block">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <div>
+                  <div class="setting-name">Projection background</div>
+                  <div class="setting-desc">Background shown on the projection display</div>
+                </div>
+                <div class="seg-btns" id="standby-bg-type">
+                  <button class="seg-btn active" data-val="solid">Solid</button>
+                  <button class="seg-btn" data-val="gradient">Gradient</button>
+                  <button class="seg-btn" data-val="image">Image</button>
+                </div>
               </div>
-              <div class="seg-btns" id="standby-bg-type">
-                <button class="seg-btn active" data-val="solid">Solid</button>
-                <button class="seg-btn" data-val="gradient">Gradient</button>
-                <button class="seg-btn" data-val="image">Image</button>
+
+              <!-- Solid color row -->
+              <div id="standby-bg-solid-row" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+                <input type="color" id="setting-standby-bg-color" value="#000000" class="color-swatch" title="Pick background color" />
+                <button class="color-preset" data-color="#000000" data-target="setting-standby-bg-color" style="background:#000000" title="Black"></button>
+                <button class="color-preset" data-color="#0a1628" data-target="setting-standby-bg-color" style="background:#0a1628" title="Navy"></button>
+                <button class="color-preset" data-color="#1a0a0a" data-target="setting-standby-bg-color" style="background:#1a0a0a" title="Dark Red"></button>
+                <button class="color-preset" data-color="#0a1a0a" data-target="setting-standby-bg-color" style="background:#0a1a0a" title="Forest"></button>
+                <button class="color-preset" data-color="#1a1a2e" data-target="setting-standby-bg-color" style="background:#1a1a2e" title="Deep Purple"></button>
+                <button class="color-preset" data-color="#ffffff" data-target="setting-standby-bg-color" style="background:#ffffff;outline:1px solid #555" title="White"></button>
+              </div>
+
+              <!-- Gradient row -->
+              <div id="standby-bg-gradient-row" style="display:none">
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                  <input type="color" id="setting-standby-bg-grad-start" value="#0a1628" class="color-swatch" title="Gradient start" />
+                  <span style="color:var(--text-muted);font-size:11px">→</span>
+                  <input type="color" id="setting-standby-bg-grad-end" value="#1a3a5c" class="color-swatch" title="Gradient end" />
+                </div>
+                <div class="grad-presets">
+                  <button class="grad-preset" data-start="#0a1628" data-end="#1a3a5c" data-target-start="setting-standby-bg-grad-start" data-target-end="setting-standby-bg-grad-end" style="background:linear-gradient(135deg,#0a1628,#1a3a5c)" title="Ocean"></button>
+                  <button class="grad-preset" data-start="#1a0010" data-end="#6b0030" data-target-start="setting-standby-bg-grad-start" data-target-end="setting-standby-bg-grad-end" style="background:linear-gradient(135deg,#1a0010,#6b0030)" title="Crimson"></button>
+                  <button class="grad-preset" data-start="#000000" data-end="#2c2c2c" data-target-start="setting-standby-bg-grad-start" data-target-end="setting-standby-bg-grad-end" style="background:linear-gradient(135deg,#000,#2c2c2c)" title="Midnight"></button>
+                  <button class="grad-preset" data-start="#0d0d2b" data-end="#2b1d4e" data-target-start="setting-standby-bg-grad-start" data-target-end="setting-standby-bg-grad-end" style="background:linear-gradient(135deg,#0d0d2b,#2b1d4e)" title="Deep Space"></button>
+                  <button class="grad-preset" data-start="#003300" data-end="#1a5c1a" data-target-start="setting-standby-bg-grad-start" data-target-end="setting-standby-bg-grad-end" style="background:linear-gradient(135deg,#003300,#1a5c1a)" title="Forest"></button>
+                  <button class="grad-preset" data-start="#1a0033" data-end="#4b0082" data-target-start="setting-standby-bg-grad-start" data-target-end="setting-standby-bg-grad-end" style="background:linear-gradient(135deg,#1a0033,#4b0082)" title="Violet"></button>
+                </div>
+              </div>
+
+              <!-- Image row -->
+              <div id="standby-bg-url-row" style="display:none">
+                <input id="setting-standby-url" type="text" placeholder="Image path or URL" style="margin-bottom:6px;width:100%;box-sizing:border-box" />
+                <input type="file" id="standby-bg-file-input" accept="image/*" style="display:none" />
+                <button id="standby-bg-upload-btn" class="btn btn-secondary btn-sm" style="width:100%">Upload Image…</button>
               </div>
             </div>
-            <div class="setting-row" id="standby-bg-url-row" style="display:none">
-              <div class="setting-info">
-                <div class="setting-name">Background image URL</div>
-                <div class="setting-desc">URL or path of the background image</div>
+
+            <!-- Standby Screen -->
+            <div class="setting-row-block">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <div>
+                  <div class="setting-name">Standby screen</div>
+                  <div class="setting-desc">Shown when the display is open but no verse is loaded yet</div>
+                </div>
+                <div class="seg-btns" id="standby-screen-type">
+                  <button class="seg-btn active" data-val="none">None</button>
+                  <button class="seg-btn" data-val="image">Image / Logo</button>
+                </div>
               </div>
-              <input id="setting-standby-url" type="text" placeholder="https://example.com/image.jpg" class="setting-input" />
+
+              <!-- Standby image options -->
+              <div id="standby-image-options" style="display:none">
+                <div style="margin-bottom:8px">
+                  <input id="setting-standby-image-url" type="text" placeholder="Image path or URL" style="margin-bottom:6px;width:100%;box-sizing:border-box" />
+                  <input type="file" id="standby-image-file-input" accept="image/*" style="display:none" />
+                  <button id="standby-image-upload-btn" class="btn btn-secondary btn-sm" style="width:100%">Upload Logo / Image…</button>
+                </div>
+                <div class="rs-field-lbl" style="margin:10px 0 4px">FIT</div>
+                <div class="seg-btns" id="standby-image-fit">
+                  <button class="seg-btn active" data-val="contain">Contain</button>
+                  <button class="seg-btn" data-val="cover">Cover</button>
+                  <button class="seg-btn" data-val="fill">Fill</button>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:0.72rem;color:var(--text-muted);margin:10px 0 2px">
+                  <span>OPACITY</span><span id="standby-opacity-val">100%</span>
+                </div>
+                <input type="range" id="setting-standby-image-opacity" min="10" max="100" step="5" value="100" class="full-slider" />
+              </div>
             </div>
           </section>
 
