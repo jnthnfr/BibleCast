@@ -295,6 +295,14 @@ async function init() {
   await loadMicrophones();
   await loadMonitors();
 
+  const appVer = await api.getAppVersion().catch(() => null);
+  if (appVer) {
+    ['about-version', 'about-version-card'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = appVer;
+    });
+  }
+
   // Refresh display state every 5 seconds
   setInterval(syncDisplayState, 5000);
 
@@ -594,8 +602,12 @@ function initSpeechRecognition() {
       let interimText = '';
       let finalDelta  = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const t = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
+        const res = event.results[i];
+        const t   = (res[0].transcript || '').trim();
+        if (!t) continue;
+        if (res.isFinal) {
+          const conf = res[0].confidence;
+          if (conf > 0 && conf < 0.15) continue;
           finalDelta    += t + ' ';
           fullTranscript += t + ' ';
           onNewFinalText(finalDelta.trim());
@@ -638,7 +650,7 @@ function initSpeechRecognition() {
       // Delay restart so onerror (which fires before onend) has time to set isListening=false
       if (isListening && settings.whisper_provider !== 'whisper-local') {
         setTimeout(() => {
-          if (isListening) try { recognition.start(); } catch (_) {}
+          if (isListening) try { recognition.lang = 'en-US'; recognition.start(); } catch (_) {}
         }, 300);
       }
     };

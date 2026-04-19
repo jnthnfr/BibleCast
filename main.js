@@ -149,9 +149,10 @@ function createOperatorWindow() {
 
 function createDisplayWindow() {
   const displays    = screen.getAllDisplays();
-  const targetDisplay = displays.length > 1
-    ? displays.find(d => d.id !== screen.getPrimaryDisplay().id) || displays[0]
-    : displays[0];
+  const preferredId = (() => { const v = getDb().getSetting('preferred_hdmi_monitor'); return v ? parseInt(v, 10) : null; })();
+  const targetDisplay =
+    (preferredId && displays.find(d => d.id === preferredId)) ||
+    (displays.length > 1 ? displays.find(d => d.id !== screen.getPrimaryDisplay().id) || displays[0] : displays[0]);
 
   const { x, y, width, height } = targetDisplay.bounds;
 
@@ -183,12 +184,21 @@ function createDisplayWindow() {
 function createNdiWindow() {
   // NDI virtual output — a second borderless window on the primary monitor,
   // screen-capturable by OBS / vMix as a virtual NDI source.
-  const primary = screen.getPrimaryDisplay();
-  const { width, height } = primary.workAreaSize;
-  const winW = Math.round(width  * 0.4);
-  const winH = Math.round(winW   * 9 / 16);
-  const winX = primary.bounds.x + Math.round((width  - winW) / 2);
-  const winY = primary.bounds.y + Math.round((height - winH) / 2);
+  const s = getDb().getAllSettings();
+  let winX, winY, winW, winH;
+  if (s.ndi_win_x != null && s.ndi_win_y != null && s.ndi_win_w != null && s.ndi_win_h != null) {
+    winX = parseInt(s.ndi_win_x, 10);
+    winY = parseInt(s.ndi_win_y, 10);
+    winW = parseInt(s.ndi_win_w, 10);
+    winH = parseInt(s.ndi_win_h, 10);
+  } else {
+    const primary = screen.getPrimaryDisplay();
+    const { width, height } = primary.workAreaSize;
+    winW = Math.round(width  * 0.4);
+    winH = Math.round(winW   * 9 / 16);
+    winX = primary.bounds.x + Math.round((width  - winW) / 2);
+    winY = primary.bounds.y + Math.round((height - winH) / 2);
+  }
 
   ndiWindow = new BrowserWindow({
     x: winX, y: winY, width: winW, height: winH,
@@ -202,6 +212,18 @@ function createNdiWindow() {
       nodeIntegration: false,
     },
   });
+
+  const saveNdiState = () => {
+    if (!ndiWindow || ndiWindow.isDestroyed()) return;
+    const [nx, ny] = ndiWindow.getPosition();
+    const [nw, nh] = ndiWindow.getSize();
+    getDb().setSetting('ndi_win_x', String(nx));
+    getDb().setSetting('ndi_win_y', String(ny));
+    getDb().setSetting('ndi_win_w', String(nw));
+    getDb().setSetting('ndi_win_h', String(nh));
+  };
+  ndiWindow.on('moved',   saveNdiState);
+  ndiWindow.on('resized', saveNdiState);
 
   ndiWindow.loadFile('src/display/display.html', { query: { ndi: '1' } });
   ndiWindow.on('closed', () => { ndiWindow = null; });
@@ -768,6 +790,7 @@ function registerIpcHandlers() {
     const { x, y, width, height } = target.bounds;
     displayWindow.setBounds({ x, y, width, height });
     if (displays.length > 1) displayWindow.setFullScreen(true);
+    getDb().setSetting('preferred_hdmi_monitor', String(target.id));
     return { ok: true };
   });
 
@@ -1016,6 +1039,8 @@ function registerIpcHandlers() {
   autoUpdater.on('error',                (err)  => sendUpdateMsg('error',         { message: err.message }));
   autoUpdater.on('download-progress',    (p)    => sendUpdateMsg('progress',      { percent: Math.round(p.percent), transferred: p.transferred, total: p.total }));
   autoUpdater.on('update-downloaded',    (info) => sendUpdateMsg('downloaded',    { version: info.version }));
+
+  ipcMain.handle('app:version', () => app.getVersion());
 
   // IPC: manual check triggered by "Check for Updates" button
   ipcMain.handle('updates:check', async () => {
@@ -1282,6 +1307,8 @@ function registerIpcHandlers() {
                 if (!SR) {
                   fetch('/error', { method: 'POST', body: 'No SpeechRecognition in this browser' });
                 } else {
+                  let _active = false;
+                  const RECOVERABLE = ['no-speech', 'aborted', 'audio-capture'];
                   const r = new SR();
                   r.continuous = true;
                   r.interimResults = true;
@@ -1289,8 +1316,16 @@ function registerIpcHandlers() {
                   r.onresult = e => {
                     let finalTxt = '', interimTxt = '';
                     for (let i = e.resultIndex; i < e.results.length; ++i) {
-                      if (e.results[i].isFinal) finalTxt += e.results[i][0].transcript;
-                      else interimTxt += e.results[i][0].transcript;
+                      const res = e.results[i];
+                      const t = (res[0].transcript || '').trim();
+                      if (!t) continue;
+                      if (res.isFinal) {
+                        const conf = res[0].confidence;
+                        if (conf > 0 && conf < 0.15) continue;
+                        finalTxt += t + ' ';
+                      } else {
+                        interimTxt += t;
+                      }
                     }
                     if (interimTxt || finalTxt) {
                        fetch('/result', {
@@ -1301,13 +1336,16 @@ function registerIpcHandlers() {
                     }
                   };
                   r.onerror = (e) => {
-                    fetch('/error', { method: 'POST', body: e.error + ' - ' + e.message });
+                    if (!RECOVERABLE.includes(e.error)) {
+                      fetch('/error', { method: 'POST', body: e.error + ' - ' + e.message });
+                    }
                   };
-                  r.onend = () => { setTimeout(() => { try { r.start(); } catch(e){} }, 500); };
+                  r.onend = () => { if (_active) setTimeout(() => { try { r.lang = 'en-US'; r.start(); } catch(e){} }, 250); };
                   
                   // Explicitly request microphone first to wake up audio context and permissions
                   navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
                     stream.getTracks().forEach(track => track.stop()); // Release lock immediately!
+                    _active = true;
                     setTimeout(() => { try { r.start(); } catch(e){} }, 50);
                   }).catch(e => {
                     fetch('/error', { method: 'POST', body: 'getUserMedia failed: ' + e.message });

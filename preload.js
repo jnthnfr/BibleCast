@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('biblecast', {
 
@@ -72,8 +72,8 @@ contextBridge.exposeInMainWorld('biblecast', {
   sendDisplayLayout: (data) =>
     ipcRenderer.invoke('display:layout', data),
 
-  saveBackgroundImage: (srcPath) =>
-    ipcRenderer.invoke('background:save-image', srcPath),
+  saveBackgroundImage: (file) =>
+    ipcRenderer.invoke('background:save-image', webUtils.getPathForFile(file)),
 
   listMonitors: () =>
     ipcRenderer.invoke('display:list-monitors'),
@@ -116,6 +116,10 @@ contextBridge.exposeInMainWorld('biblecast', {
   // --- AI Sermon Summary ---
   summarizeSermon: (transcript, apiKey) =>
     ipcRenderer.invoke('ai:summarize', { transcript, apiKey }),
+
+  // --- App info ---
+  getAppVersion: () =>
+    ipcRenderer.invoke('app:version'),
 
   // --- Updates ---
   checkForUpdates: () =>
