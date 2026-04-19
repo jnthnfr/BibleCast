@@ -1,8 +1,20 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# SQLite database files
 *.db
 *.db-wal
 *.db-shm
+
+# Environment
 .env
+
+# OS files
 .DS_Store
 Thumbs.db
+
+# Claude Code worktrees (auto-generated, not project code)
+.claude/worktrees/
