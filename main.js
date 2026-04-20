@@ -102,6 +102,17 @@ let pendingGpuResolve = null;
 let activeScrapeProc  = null;
 let db = null;
 
+const http  = require('http');
+const https = require('https');
+const os    = require('os');
+const { parseReference } = require('./src/lib/bible-parser');
+
+let whisperPipeline    = null;
+let whisperLoading     = false;
+let chromeBridgeServer = null;
+let chromeBridgePort   = 0;
+let chromeProcess      = null;
+
 function getDb() {
   if (!db) {
     try {
@@ -186,11 +197,10 @@ function createNdiWindow() {
   // screen-capturable by OBS / vMix as a virtual NDI source.
   const s = getDb().getAllSettings();
   let winX, winY, winW, winH;
-  if (s.ndi_win_x != null && s.ndi_win_y != null && s.ndi_win_w != null && s.ndi_win_h != null) {
-    winX = parseInt(s.ndi_win_x, 10);
-    winY = parseInt(s.ndi_win_y, 10);
-    winW = parseInt(s.ndi_win_w, 10);
-    winH = parseInt(s.ndi_win_h, 10);
+  const _px = parseInt(s.ndi_win_x, 10), _py = parseInt(s.ndi_win_y, 10);
+  const _pw = parseInt(s.ndi_win_w, 10), _ph = parseInt(s.ndi_win_h, 10);
+  if (!isNaN(_px) && !isNaN(_py) && !isNaN(_pw) && !isNaN(_ph) && _pw > 0 && _ph > 0) {
+    winX = _px; winY = _py; winW = _pw; winH = _ph;
   } else {
     const primary = screen.getPrimaryDisplay();
     const { width, height } = primary.workAreaSize;
@@ -421,12 +431,78 @@ function showNoTranslationsDialog() {
   });
 }
 
+// --- IPC Helpers (module-scope so all handler groups can share them) ---
+
+function buildDisplaySettingsMsg(s, state) {
+  return {
+    type:            'settings',
+    fontSize:        state?.font_size        || s.font_size         || '64',
+    theme:           state?.theme            || s.theme             || 'dark',
+    textColor:       s.text_color            || '#ffffff',
+    transitionSpeed: s.transition_enabled === 'false' ? '0' : (s.transition_speed || '0.5'),
+    showTranslation: s.show_translation      !== 'false',
+    showReference:   s.show_reference        !== 'false',
+    bgType:          s.bg_type               || 'solid',
+    bgColor:         s.bg_color              || '#000000',
+    bgGradientStart: s.bg_gradient_start     || '#0a1628',
+    bgGradientEnd:   s.bg_gradient_end       || '#1a3a5c',
+    bgImageUrl:      s.bg_image_url          || '',
+    fontFamily:      s.font_family           || 'Georgia, serif',
+    customFontFamily:s.custom_font_family    || '',
+    autoFitText:     s.auto_fit_text         !== 'false',
+    refColor:        s.ref_color             || '#e8c97a',
+    refSizeRatio:    s.ref_size_ratio        || '0.45',
+    ltAutoFitText:   s.lt_auto_fit_text      !== 'false',
+    ltBgType:        s.lt_bg_type            || 'solid',
+    ltBgColor:       s.lt_bg_color           || '#000000',
+    ltBgOpacity:     s.lt_bg_opacity         || '0.82',
+    ltBgGradientStart: s.lt_bg_gradient_start || '#000000',
+    ltBgGradientEnd:   s.lt_bg_gradient_end   || '#1a1a1a',
+    standbyType:         s.standby_type          || 'none',
+    standbyImageUrl:     s.standby_image_url     || '',
+    standbyImageFit:     s.standby_image_fit     || 'contain',
+    standbyImageOpacity: s.standby_image_opacity || '100',
+  };
+}
+
+async function getWhisperPipeline(modelId, progressCb) {
+  if (whisperPipeline) return whisperPipeline;
+  if (whisperLoading)  throw new Error('Model is already loading');
+  whisperLoading = true;
+  try {
+    const { pipeline, env } = await import('@xenova/transformers');
+    env.cacheDir = path.join(app.getPath('userData'), 'whisper-models');
+
+    const threadsSetting = getDb().getSetting('whisper_threads') || 'auto';
+    env.backends.onnx.wasm.numThreads =
+      threadsSetting === 'auto'
+        ? Math.max(2, Math.floor(os.cpus().length / 2))
+        : parseInt(threadsSetting, 10);
+
+    whisperPipeline = await pipeline('automatic-speech-recognition', modelId || 'Xenova/whisper-base.en', {
+      progress_callback: progress => progressCb && progressCb(progress),
+    });
+    return whisperPipeline;
+  } finally {
+    whisperLoading = false;
+  }
+}
+
+function getSystemChromePath() {
+  const winPaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+  ];
+  for (const p of winPaths) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
 // --- IPC Handlers ---
 
-function registerIpcHandlers() {
-
-  // Verse search — normalise the query through bible-parser before hitting the DB
-  const { parseReference } = require('./src/lib/bible-parser');
+function registerVerseHandlers() {
   ipcMain.handle('verse:search', (_event, { query, translation }) => {
     // Try to parse a structured reference first (e.g. "1 Cor 13:4" or "john 3 16")
     const parsed = parseReference(query);
@@ -472,32 +548,36 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
-  // Blank / unblank display
-  ipcMain.handle('display:blank', (_event, blank) => {
-    getDb().updateDisplayState({ is_visible: blank ? 0 : 1 });
+  ipcMain.handle('verse:navigate', async (_event, { direction }) => {
+    const state = getDb().getDisplayState();
+    if (!state || !state.current_reference) return { ok: false };
 
-    const blankMsg = { type: 'blank', visible: !blank };
-    if (displayWindow)    displayWindow.webContents.send('display:update', blankMsg);
-    if (ndiWindow)        ndiWindow.webContents.send('display:update', blankMsg);
-    if (hdmiMirrorWindow) hdmiMirrorWindow.webContents.send('display:update', blankMsg);
+    const translation = state.translation || 'KJV';
+    const verses = getDb().getTranslationVerses(translation);
+    if (!verses) return { ok: false };
+    const idx = verses.findIndex(v =>
+      `${v.book} ${v.chapter}:${v.verse}` === state.current_reference
+    );
+    if (idx < 0) return { ok: false };
 
-    return { ok: true };
+    const next = direction === 'next' ? verses[idx + 1] : verses[idx - 1];
+    if (!next) return { ok: false };
+
+    next.reference = `${next.book} ${next.chapter}:${next.verse}`;
+    next.translation = translation;
+    return { ok: true, verse: next };
   });
+}
 
-  // Display state
-  ipcMain.handle('display:state', () => getDb().getDisplayState());
-
-  // Sessions
+function registerSessionHandlers() {
   ipcMain.handle('session:create', (_event, name) => getDb().createSession(name));
   ipcMain.handle('session:active', ()              => getDb().getActiveSession());
   ipcMain.handle('session:list',   ()              => getDb().listSessions());
   ipcMain.handle('session:verses', (_event, id)   => getDb().getSessionVerses(id));
+}
 
-  // Translations
-  ipcMain.handle('translations:list', () => getDb().listTranslations());
-
-  // Settings
-  ipcMain.handle('settings:get',  ()                    => getDb().getAllSettings());
+function registerSettingsHandlers() {
+  ipcMain.handle('settings:get', () => getDb().getAllSettings());
   ipcMain.handle('settings:save', (_event, { key, value }) => {
     getDb().setSetting(key, value);
 
@@ -520,7 +600,7 @@ function registerIpcHandlers() {
         bgType:           s.bg_type            || 'solid',
         bgColor:          s.bg_color           || '#000000',
         bgGradientStart:  s.bg_gradient_start  || '#0a1628',
-        bgGradientEnd:    s.bg_gradient_end    || '#1a3a5c',
+        bgGradientEnd:    s.bg_gradient_end     || '#1a3a5c',
         bgImageUrl:       s.bg_image_url       || '',
         fontFamily:       s.font_family        || 'Georgia, serif',
         customFontFamily: s.custom_font_family || '',
@@ -544,8 +624,11 @@ function registerIpcHandlers() {
     }
     return { ok: true };
   });
+}
 
-  // List available downloadable translations
+function registerTranslationHandlers() {
+  ipcMain.handle('translations:list', () => getDb().listTranslations());
+
   ipcMain.handle('translations:available', () => [
     { abbr: 'kjv',     name: 'King James Version (1611)',          language: 'English'    },
     { abbr: 'asv',     name: 'American Standard Version (1901)',   language: 'English'    },
@@ -563,10 +646,7 @@ function registerIpcHandlers() {
     { abbr: 'almeida', name: 'Almeida Revista e Corrigida',        language: 'Portuguese' },
   ]);
 
-  // Download a translation from getbible.net
   ipcMain.handle('translations:download', async (_event, abbr) => {
-    const https = require('https');
-
     function httpGet(url) {
       return new Promise((resolve, reject) => {
         const req = https.get(url, { headers: { 'User-Agent': 'BibleCast/1.0' } }, res => {
@@ -636,7 +716,6 @@ function registerIpcHandlers() {
     }
   });
 
-  // Seed bundled KJV (manual trigger)
   ipcMain.handle('translations:seed-bundled', () => {
     const kjvPath = path.join(__dirname, 'data', 'translations', 'kjv.json');
     if (!fs.existsSync(kjvPath)) return { ok: false, error: 'Bundled KJV not found. Run: npm run bundle:kjv' };
@@ -649,7 +728,6 @@ function registerIpcHandlers() {
     }
   });
 
-  // Seed sample KJV (fallback)
   ipcMain.handle('translations:seed-sample', () => {
     try {
       const verses = require('./data/sample-kjv.js');
@@ -665,7 +743,6 @@ function registerIpcHandlers() {
     }
   });
 
-  // Import translation from JSON or XML file
   ipcMain.handle('translations:import-file', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(operatorWindow, {
       title: 'Import Bible Translation (JSON or XML)',
@@ -706,42 +783,22 @@ function registerIpcHandlers() {
       return { ok: false, error: err.message };
     }
   });
+}
 
-  // Builds the full settings payload sent to any display window on init.
-  // Single source of truth — keeps main HDMI and mirror in sync.
-  function buildDisplaySettingsMsg(s, state) {
-    return {
-      type:            'settings',
-      fontSize:        state?.font_size        || s.font_size         || '64',
-      theme:           state?.theme            || s.theme             || 'dark',
-      textColor:       s.text_color            || '#ffffff',
-      transitionSpeed: s.transition_enabled === 'false' ? '0' : (s.transition_speed || '0.5'),
-      showTranslation: s.show_translation      !== 'false',
-      showReference:   s.show_reference        !== 'false',
-      bgType:          s.bg_type               || 'solid',
-      bgColor:         s.bg_color              || '#000000',
-      bgGradientStart: s.bg_gradient_start     || '#0a1628',
-      bgGradientEnd:   s.bg_gradient_end       || '#1a3a5c',
-      bgImageUrl:      s.bg_image_url          || '',
-      fontFamily:      s.font_family           || 'Georgia, serif',
-      customFontFamily:s.custom_font_family    || '',
-      autoFitText:     s.auto_fit_text         !== 'false',
-      refColor:        s.ref_color             || '#e8c97a',
-      refSizeRatio:    s.ref_size_ratio        || '0.45',
-      ltAutoFitText:   s.lt_auto_fit_text      !== 'false',
-      ltBgType:        s.lt_bg_type            || 'solid',
-      ltBgColor:       s.lt_bg_color           || '#000000',
-      ltBgOpacity:     s.lt_bg_opacity         || '0.82',
-      ltBgGradientStart: s.lt_bg_gradient_start || '#000000',
-      ltBgGradientEnd:   s.lt_bg_gradient_end   || '#1a1a1a',
-      standbyType:         s.standby_type          || 'none',
-      standbyImageUrl:     s.standby_image_url     || '',
-      standbyImageFit:     s.standby_image_fit     || 'contain',
-      standbyImageOpacity: s.standby_image_opacity || '100',
-    };
-  }
+function registerDisplayHandlers() {
+  ipcMain.handle('display:blank', (_event, blank) => {
+    getDb().updateDisplayState({ is_visible: blank ? 0 : 1 });
 
-  // Toggle the display window — create on first call, close on second
+    const blankMsg = { type: 'blank', visible: !blank };
+    if (displayWindow)    displayWindow.webContents.send('display:update', blankMsg);
+    if (ndiWindow)        ndiWindow.webContents.send('display:update', blankMsg);
+    if (hdmiMirrorWindow) hdmiMirrorWindow.webContents.send('display:update', blankMsg);
+
+    return { ok: true };
+  });
+
+  ipcMain.handle('display:state', () => getDb().getDisplayState());
+
   ipcMain.handle('display:open', () => {
     if (displayWindow) {
       displayWindow.destroy();
@@ -749,16 +806,13 @@ function registerIpcHandlers() {
       return { ok: false, open: false };
     }
     createDisplayWindow();
-    // Once loaded, push current state + settings so it renders immediately
     displayWindow.webContents.once('did-finish-load', () => {
       const state = getDb().getDisplayState();
       const s     = getDb().getAllSettings();
       displayWindow.webContents.send('display:update', buildDisplaySettingsMsg(s, state));
-      // Apply saved layout
       if (s.hdmi_layout) {
         displayWindow.webContents.send('display:update', { type: 'layout', layout: s.hdmi_layout });
       }
-      // If there's a verse currently on display, push it
       if (state?.current_text && state.is_visible) {
         displayWindow.webContents.send('display:update', {
           type:        'verse',
@@ -772,7 +826,6 @@ function registerIpcHandlers() {
     return { ok: true, open: true };
   });
 
-  // List connected monitors
   ipcMain.handle('display:list-monitors', () => {
     return screen.getAllDisplays().map((d, i) => ({
       id:      d.id,
@@ -782,7 +835,6 @@ function registerIpcHandlers() {
     }));
   });
 
-  // Move display window to a specific monitor
   ipcMain.handle('display:set-monitor', (_event, { displayId }) => {
     if (!displayWindow) return { ok: false };
     const displays = screen.getAllDisplays();
@@ -794,7 +846,6 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
-  // Open / close NDI virtual output window
   ipcMain.handle('display:open-ndi', (_event, open) => {
     if (open) {
       if (!ndiWindow) {
@@ -823,7 +874,6 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
-  // Open / close HDMI Mirror window (Display Settings pane toggle)
   ipcMain.handle('display:open-hdmi-mirror', (_event, open) => {
     if (open) {
       if (!hdmiMirrorWindow) {
@@ -852,7 +902,6 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
-  // Set layout (fullscreen / lower-third) for HDMI or NDI window
   ipcMain.handle('display:layout', (_event, { target, layout }) => {
     const msg = { type: 'layout', layout };
     if (target === 'hdmi' && displayWindow) displayWindow.webContents.send('display:update', msg);
@@ -861,7 +910,6 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
-  // Copy a background image file to the app userData backgrounds folder
   ipcMain.handle('background:save-image', async (_event, srcPath) => {
     try {
       const bgDir  = path.join(app.getPath('userData'), 'backgrounds');
@@ -874,39 +922,9 @@ function registerIpcHandlers() {
       return { ok: false, error: err.message };
     }
   });
+}
 
-  // ── Whisper AI (local, via @xenova/transformers) ─────────────────────────────
-  let whisperPipeline = null;
-  let whisperLoading  = false;
-
-  async function getWhisperPipeline(modelId, progressCb) {
-    if (whisperPipeline) return whisperPipeline;
-    if (whisperLoading)  throw new Error('Model is already loading');
-    whisperLoading = true;
-    try {
-      // @xenova/transformers is ESM-only — use dynamic import() from CommonJS
-      const { pipeline, env } = await import('@xenova/transformers');
-      // Cache models next to app userData so they survive app restarts
-      env.cacheDir = path.join(app.getPath('userData'), 'whisper-models');
-
-      // Apply CPU thread count from settings
-      const os = require('os');
-      const threadsSetting = getDb().getSetting('whisper_threads') || 'auto';
-      env.backends.onnx.wasm.numThreads =
-        threadsSetting === 'auto'
-          ? Math.max(2, Math.floor(os.cpus().length / 2))
-          : parseInt(threadsSetting, 10);
-
-      whisperPipeline = await pipeline('automatic-speech-recognition', modelId || 'Xenova/whisper-base.en', {
-        progress_callback: progress => progressCb && progressCb(progress),
-      });
-      return whisperPipeline;
-    } finally {
-      whisperLoading = false;
-    }
-  }
-
-  // GPU worker IPC — results/progress forwarded from the hidden GPU window
+function registerWhisperHandlers() {
   ipcMain.on('whisper:gpu:result', (_e, result) => {
     if (pendingGpuResolve) { pendingGpuResolve(result); pendingGpuResolve = null; }
   });
@@ -914,7 +932,6 @@ function registerIpcHandlers() {
     operatorWindow?.webContents.send('whisper:progress', p);
   });
 
-  // Open/close GPU worker window
   ipcMain.handle('whisper:set-gpu', (_e, enable) => {
     if (enable && !gpuWorkerWindow) createGpuWorkerWindow();
     if (!enable && gpuWorkerWindow) { gpuWorkerWindow.destroy(); gpuWorkerWindow = null; }
@@ -922,14 +939,12 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('whisper:transcribe', async (_event, { audioArray, modelId }) => {
-    // Route to GPU worker window when GPU acceleration is enabled
     const useGpu = getDb().getSetting('whisper_gpu') === 'true';
     if (useGpu && gpuWorkerWindow) {
       const cacheDir = path.join(app.getPath('userData'), 'whisper-models');
       return new Promise(resolve => {
         pendingGpuResolve = resolve;
         gpuWorkerWindow.webContents.send('whisper:gpu:transcribe', { audioArray, modelId, cacheDir });
-        // GPU worker sends result/error via on('whisper:gpu:result')
         setTimeout(() => {
           if (pendingGpuResolve) {
             pendingGpuResolve({ ok: false, error: 'GPU timeout — falling back to CPU' });
@@ -939,7 +954,6 @@ function registerIpcHandlers() {
       });
     }
 
-    // CPU path
     try {
       const pipe    = await getWhisperPipeline(modelId, progress => {
         operatorWindow?.webContents.send('whisper:progress', progress);
@@ -952,16 +966,13 @@ function registerIpcHandlers() {
     }
   });
 
-  // Reset the cached pipeline (called when user changes model size or thread count)
   ipcMain.handle('whisper:reset', () => {
     whisperPipeline = null;
     if (gpuWorkerWindow) gpuWorkerWindow.webContents.send('whisper:gpu:reset');
     return { ok: true };
   });
 
-  // Hardware info for the Settings AI Performance section
   ipcMain.handle('system:hardware-info', async () => {
-    const os   = require('os');
     const cpus = os.cpus();
     const gpuInfo = await app.getGPUInfo('basic').catch(() => ({}));
     const gpuName = gpuInfo?.gpuDevice?.[0]?.deviceString || 'Unknown GPU';
@@ -971,13 +982,13 @@ function registerIpcHandlers() {
       gpuName,
     };
   });
+}
 
-  // ── AI Sermon Summary (OpenAI GPT) ───────────────────────────────────────────
+function registerAiHandlers() {
   ipcMain.handle('ai:summarize', async (_event, { transcript, apiKey }) => {
     if (!apiKey || !transcript || transcript.trim().split(/\s+/).length < 30)
       return { ok: false, error: 'insufficient_data' };
 
-    const https = require('https');
     const body  = JSON.stringify({
       model: 'gpt-3.5-turbo',
       messages: [
@@ -1019,14 +1030,14 @@ function registerIpcHandlers() {
       return { ok: false, error: err.message };
     }
   });
+}
 
-  // ── Auto-updater (electron-updater → GitHub Releases) ───────────────
+function registerUpdateHandlers() {
   const { autoUpdater } = require('electron-updater');
 
-  // Silence the built-in logger; forward events to the renderer instead
   autoUpdater.logger          = null;
-  autoUpdater.autoDownload    = false; // ask the user before downloading
-  autoUpdater.autoInstallOnAppQuit = true; // install silently when app quits
+  autoUpdater.autoDownload    = false;
+  autoUpdater.autoInstallOnAppQuit = true;
 
   function sendUpdateMsg(event, payload) {
     if (operatorWindow && !operatorWindow.isDestroyed()) {
@@ -1043,7 +1054,6 @@ function registerIpcHandlers() {
 
   ipcMain.handle('app:version', () => app.getVersion());
 
-  // IPC: manual check triggered by "Check for Updates" button
   ipcMain.handle('updates:check', async () => {
     try {
       await autoUpdater.checkForUpdates();
@@ -1053,7 +1063,6 @@ function registerIpcHandlers() {
     }
   });
 
-  // IPC: user confirmed — start downloading
   ipcMain.handle('updates:download', async () => {
     try {
       await autoUpdater.downloadUpdate();
@@ -1063,27 +1072,22 @@ function registerIpcHandlers() {
     }
   });
 
-  // IPC: quit and install immediately
   ipcMain.handle('updates:install', () => {
     autoUpdater.quitAndInstall(false, true);
   });
 
-  // IPC: open release page in browser (fallback)
   ipcMain.handle('updates:open-release', (_event, url) => {
     const { shell } = require('electron');
     shell.openExternal(url);
     return { ok: true };
   });
 
-  // Auto-check 10 s after launch (packaged builds only)
   if (app.isPackaged) {
     setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 10000);
   }
+}
 
-  // Next / previous verse navigation (for voice commands)
-  // ── Bible Gateway Scraper ────────────────────────────────────────────────────
-
-  // Open / focus the scraper popup window
+function registerScraperHandlers() {
   ipcMain.handle('scraper:open', () => {
     if (scraperWindow && !scraperWindow.isDestroyed()) {
       scraperWindow.focus();
@@ -1093,7 +1097,6 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
-  // Detect Python installation and return version + executable path
   ipcMain.handle('scraper:check-python', async () => {
     const { execFile } = require('child_process');
 
@@ -1110,7 +1113,6 @@ function registerIpcHandlers() {
       });
     }
 
-    // Try python3 first (preferred on most systems), then plain python
     const r3 = await tryPython('python3');
     if (r3.ok) return r3;
     const r = await tryPython('python');
@@ -1118,13 +1120,11 @@ function registerIpcHandlers() {
     return { ok: false, error: 'Python 3 not found. Install from python.org and ensure it is on PATH.' };
   });
 
-  // Start scraping a queue of translations sequentially
   ipcMain.handle('scraper:start', async (_event, { abbrs, pythonPath: pyPath }) => {
     if (!abbrs || !abbrs.length) return { ok: false, error: 'No translations specified' };
 
     const { spawn } = require('child_process');
 
-    // Resolve the bundled Python scraper script
     const scriptPath = app.isPackaged
       ? path.join(process.resourcesPath, 'scripts', 'scrape_bible.py')
       : path.join(__dirname, 'scripts', 'scrape_bible.py');
@@ -1158,7 +1158,7 @@ function registerIpcHandlers() {
         proc.stdout.on('data', chunk => {
           buffer += chunk.toString('utf-8');
           const lines = buffer.split('\n');
-          buffer = lines.pop(); // keep incomplete last line
+          buffer = lines.pop();
 
           for (const line of lines) {
             const trimmed = line.trim();
@@ -1166,13 +1166,12 @@ function registerIpcHandlers() {
             try {
               const msg = JSON.parse(trimmed);
 
-              // Forward every progress event to the scraper window
               if (scraperWindow && !scraperWindow.isDestroyed()) {
                 scraperWindow.webContents.send('scraper:progress', { abbr, ...msg });
               }
 
               if (msg.type === 'done') finalVerses = msg.verses;
-            } catch (_) { /* non-JSON line — ignore */ }
+            } catch (_) {}
           }
         });
 
@@ -1188,7 +1187,6 @@ function registerIpcHandlers() {
       });
     }
 
-    // Process queue sequentially in the background (non-blocking IPC return)
     setImmediate(async () => {
       for (const abbr of abbrs) {
         if (scraperWindow && !scraperWindow.isDestroyed()) {
@@ -1211,7 +1209,6 @@ function registerIpcHandlers() {
                 abbr, type: 'imported', count: result.verses.length, name,
               });
             }
-            // Notify the operator panel so the translation dropdown refreshes
             if (operatorWindow && !operatorWindow.isDestroyed()) {
               operatorWindow.webContents.send('translations:ready');
             }
@@ -1231,7 +1228,6 @@ function registerIpcHandlers() {
         }
       }
 
-      // Signal that the full queue is done
       if (scraperWindow && !scraperWindow.isDestroyed()) {
         scraperWindow.webContents.send('scraper:progress', { type: 'queue-done' });
       }
@@ -1240,7 +1236,6 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
-  // Kill the active Python scrape process
   ipcMain.handle('scraper:cancel', () => {
     if (activeScrapeProc) {
       try { activeScrapeProc.kill(); } catch (_) {}
@@ -1248,46 +1243,9 @@ function registerIpcHandlers() {
     }
     return { ok: true };
   });
+}
 
-  ipcMain.handle('verse:navigate', async (_event, { direction }) => {
-    const state = getDb().getDisplayState();
-    if (!state || !state.current_reference) return { ok: false };
-
-    const translation = state.translation || 'KJV';
-    const verses = getDb().getTranslationVerses(translation);
-    if (!verses) return { ok: false };
-    const idx = verses.findIndex(v =>
-      `${v.book} ${v.chapter}:${v.verse}` === state.current_reference
-    );
-    if (idx < 0) return { ok: false };
-
-    const next = direction === 'next' ? verses[idx + 1] : verses[idx - 1];
-    if (!next) return { ok: false };
-
-    next.reference = `${next.book} ${next.chapter}:${next.verse}`;
-    next.translation = translation;
-    return { ok: true, verse: next };
-  });
-
-  // ── Out-of-Process Chrome Web Speech Bridge ──────────────────────────────────
-  const http = require('http');
-  const os = require('os');
-  let chromeBridgeServer = null;
-  let chromeBridgePort = 0;
-  let chromeProcess = null;
-
-  function getSystemChromePath() {
-    const winPaths = [
-      'C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
-      'C:\\\\Program Files (x86)\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
-      path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'Application', 'chrome.exe')
-    ];
-    for (const p of winPaths) {
-      if (fs.existsSync(p)) return p;
-    }
-    return null;
-  }
-
+function registerChromeBridgeHandlers() {
   ipcMain.handle('chrome:start-bridge', async () => {
     if (chromeProcess) return { ok: true, msg: 'Already running' };
 
@@ -1340,10 +1298,9 @@ function registerIpcHandlers() {
                     }
                   };
                   r.onend = () => { if (_active) setTimeout(() => { try { r.lang = 'en-US'; r.start(); } catch(e){} }, 250); };
-                  
-                  // Explicitly request microphone first to wake up audio context and permissions
+
                   navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-                    stream.getTracks().forEach(track => track.stop()); // Release lock immediately!
+                    stream.getTracks().forEach(track => track.stop());
                     _active = true;
                     setTimeout(() => { try { r.start(); } catch(e){} }, 50);
                   }).catch(e => {
@@ -1415,8 +1372,20 @@ function registerIpcHandlers() {
     }
     return { ok: true };
   });
+}
 
-  // Kill spawned processes when BibleCast quits
+function registerIpcHandlers() {
+  registerVerseHandlers();
+  registerDisplayHandlers();
+  registerSessionHandlers();
+  registerTranslationHandlers();
+  registerSettingsHandlers();
+  registerWhisperHandlers();
+  registerAiHandlers();
+  registerUpdateHandlers();
+  registerScraperHandlers();
+  registerChromeBridgeHandlers();
+
   app.on('before-quit', () => {
     if (chromeProcess) { chromeProcess.kill(); chromeProcess = null; }
     if (activeScrapeProc) {

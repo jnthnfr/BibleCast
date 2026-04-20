@@ -286,15 +286,6 @@ function applyLayout(layout) {
   if (isLt ? autoFitLtEnabled : autoFitEnabled) autoFitText();
 }
 
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 window.addEventListener('resize', () => {
   const isLt = document.body.classList.contains('layout-lower-third');
   if (isLt ? autoFitLtEnabled : autoFitEnabled) autoFitText();

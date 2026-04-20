@@ -23,8 +23,8 @@ let displayWindowOpen = false;
 // Whether the HDMI mirror window is currently open
 let hdmiMirrorOpen = false;
 
-// Tracks whether initial settings have been loaded once (guards HDMI auto-open on re-load)
-let settingsLoaded = false;
+// Guards against re-opening NDI/HDMI windows on every settings save; only auto-opens on first load
+let startupWindowsOpened = false;
 
 // Last update check result
 let updateInfo = null;
@@ -1936,7 +1936,7 @@ async function loadAllSettings() {
   if (ndiToggle) {
     const ndiEnabled = s.ndi_enabled === 'true';
     ndiToggle.checked = ndiEnabled;
-    if (!settingsLoaded && ndiEnabled) await api.openNdiDisplay(true);
+    if (!startupWindowsOpened && ndiEnabled) await api.openNdiDisplay(true);
   }
 
   // Restore HDMI mirror toggle (Display Settings pane)
@@ -1945,14 +1945,14 @@ async function loadAllSettings() {
     const mirrorEnabled = s.hdmi_mirror_enabled === 'true';
     hdmiMirrorToggle.checked = mirrorEnabled;
     hdmiMirrorOpen = mirrorEnabled;
-    if (!settingsLoaded && mirrorEnabled) await api.openHdmiMirror(true);
+    if (!startupWindowsOpened && mirrorEnabled) await api.openHdmiMirror(true);
   }
 
   // Restore HDMI layout button
   if (s.hdmi_layout) setActiveSegBtn('hdmi-layout', s.hdmi_layout);
   if (s.ndi_layout)  setActiveSegBtn('ndi-layout',  s.ndi_layout);
 
-  settingsLoaded = true;
+  startupWindowsOpened = true;
 }
 
 async function loadSettingsView() {
@@ -2778,15 +2778,6 @@ function appendToTranscript(text) {
   if (fullTranscript.length > MAX_TRANSCRIPT_CHARS) {
     fullTranscript = fullTranscript.slice(-MAX_TRANSCRIPT_CHARS);
   }
-}
-
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
