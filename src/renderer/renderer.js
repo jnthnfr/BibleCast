@@ -608,8 +608,8 @@ function initSpeechRecognition() {
         if (res.isFinal) {
           const conf = res[0].confidence;
           if (conf > 0 && conf < 0.15) continue;
-          finalDelta    += t + ' ';
-          fullTranscript += t + ' ';
+          finalDelta += t + ' ';
+          appendToTranscript(t + ' ');
           onNewFinalText(finalDelta.trim());
         } else {
           interimText += t;
@@ -719,7 +719,7 @@ function startChromeBridgeCapture() {
     // Data from Chrome: { interim: string, final: string }
     api.onChromeSpeechResult((data) => {
       if (data.final) {
-        fullTranscript += (fullTranscript ? ' ' : '') + data.final;
+        appendToTranscript((fullTranscript ? ' ' : '') + data.final);
         updateTranscriptDisplay('');
         onNewFinalText(data.final);
       } else if (data.interim) {
@@ -873,7 +873,7 @@ async function startVoskCapture() {
     voskRec.on('result', msg => {
       const text = (msg.result?.text || '').trim();
       if (text) {
-        fullTranscript += (fullTranscript ? ' ' : '') + text;
+        appendToTranscript((fullTranscript ? ' ' : '') + text);
         updateTranscriptDisplay('');
         onNewFinalText(text);
       }
@@ -932,7 +932,7 @@ async function flushWhisperBuffer() {
     const result = await api.transcribeAudio(Array.from(chunk), modelId);
     if (result.ok && result.text.trim()) {
       const text = result.text.trim();
-      fullTranscript += text + ' ';
+      appendToTranscript(text + ' ');
       updateTranscriptDisplay('');
       onNewFinalText(text);
     }
@@ -1274,7 +1274,10 @@ async function summarizeWithAI(fallbackText) {
   if (el) el.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Generating AI summary…</span>`;
 
   try {
-    const result = await api.summarizeSermon(fullTranscript, apiKey);
+    const MAX_AI_WORDS = 2000;
+    const allWords   = fullTranscript.trim().split(/\s+/).filter(Boolean);
+    const aiInput    = allWords.slice(-MAX_AI_WORDS).join(' ');
+    const result = await api.summarizeSermon(aiInput, apiKey);
     if (result.ok && el) {
       el.textContent = result.summary;
     } else {
@@ -2767,6 +2770,15 @@ function initUpdaterEvents() {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+
+const MAX_TRANSCRIPT_CHARS = 60000; // ~10k words; prevents unbounded growth in long sessions
+
+function appendToTranscript(text) {
+  fullTranscript += text;
+  if (fullTranscript.length > MAX_TRANSCRIPT_CHARS) {
+    fullTranscript = fullTranscript.slice(-MAX_TRANSCRIPT_CHARS);
+  }
+}
 
 function escapeHtml(str) {
   if (!str) return '';

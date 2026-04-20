@@ -8,9 +8,9 @@ let gpuPipeline = null;
 window.electronAPI.on('whisper:gpu:transcribe', async ({ audioArray, modelId, cacheDir }) => {
   try {
     if (!gpuPipeline) {
+      window.electronAPI.send('whisper:gpu:progress', { status: 'initiate' });
       const { pipeline, env } = await import('@xenova/transformers');
       env.cacheDir = cacheDir;
-      window.electronAPI.send('whisper:gpu:progress', { status: 'initiate' });
       gpuPipeline = await pipeline(
         'automatic-speech-recognition',
         modelId || 'Xenova/whisper-base.en',
