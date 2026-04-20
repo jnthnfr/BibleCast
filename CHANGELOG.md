@@ -5,6 +5,15 @@ Update this file after every development session or task.
 
 ---
 
+## Session — 2026-04-20 (Maintenance)
+
+### Git History Cleanup
+- Removed `Co-Authored-By: Claude` trailers from 3 commits (`v1.2.0`, `v1.4.1`, `v1.4.2` era commits)
+- Rewrote history with `git filter-branch --msg-filter` and force-pushed `main` + affected tags to GitHub
+- Confirmed clean: GitHub API shows no remaining co-author trailers; only `jnthnfr` listed as contributor
+
+---
+
 ## v1.1.4 — 2026-04-16
 
 ### Feature
