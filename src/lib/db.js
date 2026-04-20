@@ -112,12 +112,26 @@ function getSessionVerses(sessionId) {
 
 // --- Verse search ---
 
-function searchVerses({ query, translation = 'KJV', limit = 20 }) {
-  const db = getDb();
-  const trans = db.prepare('SELECT data FROM translations WHERE abbreviation = ?').get(translation);
-  if (!trans) return [];
+// In-memory cache — avoids re-parsing multi-MB JSON on every search call
+const verseCache = new Map();
 
-  const verses = JSON.parse(trans.data);
+function getTranslationVerses(abbreviation) {
+  const key = abbreviation.toUpperCase();
+  if (verseCache.has(key)) return verseCache.get(key);
+  const trans = getDb().prepare('SELECT data FROM translations WHERE abbreviation = ?').get(abbreviation);
+  if (!trans) return null;
+  try {
+    const verses = JSON.parse(trans.data);
+    verseCache.set(key, verses);
+    return verses;
+  } catch {
+    return null;
+  }
+}
+
+function searchVerses({ query, translation = 'KJV', limit = 20 }) {
+  const verses = getTranslationVerses(translation);
+  if (!verses) return [];
 
   // Check if query looks like a reference (e.g. "John 3:16" or "John 3 16")
   const refMatch = query.match(/^(\d?\s*[a-zA-Z]+(?:\s+[a-zA-Z]+)*?)\s+(\d+)(?:[: ](\d+))?/);
@@ -163,6 +177,7 @@ function addTranslation({ name, abbreviation, language, data }) {
     INSERT OR REPLACE INTO translations (name, abbreviation, language, data)
     VALUES (?, ?, ?, ?)
   `).run(name, abbreviation, language, JSON.stringify(data));
+  verseCache.delete(abbreviation.toUpperCase());
 }
 
 // --- Display state ---
@@ -216,6 +231,7 @@ module.exports = {
   logDisplayedVerse,
   getSessionVerses,
   searchVerses,
+  getTranslationVerses,
   listTranslations,
   addTranslation,
   getDisplayState,

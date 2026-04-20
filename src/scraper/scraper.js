@@ -42,6 +42,7 @@ let pythonPath    = null;
 let installedSet  = new Set();
 let isScraping    = false;
 let progressMap   = {}; // abbr → { status, done, total }
+let progressListener = null; // Store listener reference for cleanup
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 
@@ -154,7 +155,7 @@ function updateProgressRow(abbr, pct, statusText, state) {
   const abbrEl  = document.getElementById(`pa-${abbr}`);
   const barEl   = document.getElementById(`pb-${abbr}`);
   const statEl  = document.getElementById(`ps-${abbr}`);
-  if (!abbrEl) return;
+  if (!abbrEl || !barEl || !statEl) return;
 
   abbrEl.className = `prog-abbr ${state}`;
   barEl.className  = `prog-bar ${state}`;
@@ -165,7 +166,7 @@ function updateProgressRow(abbr, pct, statusText, state) {
 // ── Progress listener ──────────────────────────────────────────────────────
 
 function listenProgress() {
-  api.onScrapeProgress(msg => {
+  progressListener = msg => {
     const { abbr } = msg;
 
     // Queue-level completion — reset scraping state
@@ -217,7 +218,15 @@ function listenProgress() {
         updateProgressRow(abbr, 100, `✗ ${msg.msg || 'Error'}`, 'error');
         break;
     }
-  });
+  };
+  api.onScrapeProgress(progressListener);
+}
+
+function cleanupScraper() {
+  if (progressListener) {
+    api.offScrapeProgress?.(progressListener);
+    progressListener = null;
+  }
 }
 
 // ── Download ───────────────────────────────────────────────────────────────
@@ -291,7 +300,10 @@ function bindEvents() {
     document.getElementById('footer-info').textContent = 'Download cancelled.';
   });
 
-  document.getElementById('close-btn').addEventListener('click', () => window.close());
+  document.getElementById('close-btn').addEventListener('click', () => {
+    cleanupScraper();
+    window.close();
+  });
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────

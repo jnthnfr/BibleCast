@@ -929,6 +929,7 @@ function registerIpcHandlers() {
       return new Promise(resolve => {
         pendingGpuResolve = resolve;
         gpuWorkerWindow.webContents.send('whisper:gpu:transcribe', { audioArray, modelId, cacheDir });
+        // GPU worker sends result/error via on('whisper:gpu:result')
         setTimeout(() => {
           if (pendingGpuResolve) {
             pendingGpuResolve({ ok: false, error: 'GPU timeout — falling back to CPU' });
@@ -1253,10 +1254,8 @@ function registerIpcHandlers() {
     if (!state || !state.current_reference) return { ok: false };
 
     const translation = state.translation || 'KJV';
-    const trans = getDb().getDb().prepare('SELECT data FROM translations WHERE abbreviation = ?').get(translation);
-    if (!trans) return { ok: false };
-
-    const verses = JSON.parse(trans.data);
+    const verses = getDb().getTranslationVerses(translation);
+    if (!verses) return { ok: false };
     const idx = verses.findIndex(v =>
       `${v.book} ${v.chapter}:${v.verse}` === state.current_reference
     );
