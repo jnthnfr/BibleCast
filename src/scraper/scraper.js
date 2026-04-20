@@ -259,13 +259,6 @@ async function startDownload() {
   await api.startScrape({ abbrs, pythonPath });
 }
 
-// ── Utilities ──────────────────────────────────────────────────────────────
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 // ── Event bindings ─────────────────────────────────────────────────────────
 
@@ -309,3 +302,4 @@ function bindEvents() {
 // ── Init ───────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', init);
+window.addEventListener('beforeunload', cleanupScraper);
