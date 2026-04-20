@@ -1,196 +1,161 @@
-# BibleCast — Development Changelog
+# Changelog
 
-This file is a historical record of all changes made to the app.
-Update this file after every development session or task.
-
----
-
-## Session — 2026-04-20 (Maintenance)
-
-### Git History Cleanup
-- Removed `Co-Authored-By: Claude` trailers from 3 commits (`v1.2.0`, `v1.4.1`, `v1.4.2` era commits)
-- Rewrote history with `git filter-branch --msg-filter` and force-pushed `main` + affected tags to GitHub
-- Confirmed clean: GitHub API shows no remaining co-author trailers; only `jnthnfr` listed as contributor
+All notable changes to BibleCast are documented here.
 
 ---
 
-## v1.1.4 — 2026-04-16
+## [1.4.2] — 2026-04-20
 
-### Feature
-- **Chrome Web Speech Bridge** — "Web Speech API" option now spawns a hidden Chrome instance that runs `webkitSpeechRecognition` and pipes results back to BibleCast via a local HTTP server on `127.0.0.1`
-  - No new npm dependencies — uses native `http` and `child_process`
-  - Searches standard Windows Chrome install paths automatically
-  - Final results trigger verse prediction (`onNewFinalText`) just like Vosk/Whisper
-  - Chrome process is killed on Stop Listening and on app quit
-  - `/error` route added to bridge server; errors shown in transcript panel
-  - Microphone limitation acknowledged: Web Speech API only accepts OS default mic (physical device only — no piped audio without virtual mic drivers)
+### Fixed
+- Shared `escapeHtml` utility extracted to `src/lib/utils-browser.js` — duplicate implementations removed from `renderer.js`, `display.js`, and `scraper.js`
+- NDI window position/size values validated before use — prevents crash on corrupt settings
+- IPC handlers split from a single 800-line function into 10 focused sub-functions
+- Windows Chrome executable paths corrected (double-escaped backslashes)
+- Renamed internal `settingsLoaded` flag to `startupWindowsOpened` to better reflect its purpose
 
 ---
 
-## v1.1.3 — 2026-04-16
+## [1.4.1] — 2026-04-20
 
-### Improvement
-- **Enter to project** — pressing Enter in the manual search box now searches and immediately projects the top result; first result is highlighted as selected in the list
-
----
-
-## v1.1.2 — 2026-04-16
-
-### Improvement
-- **Bundle Vosk model** — `vosk-model-small-en-us-0.15.tar.gz` (39 MB) now shipped with the app; no internet download on first use
-  - Registered `app-asset://` custom Electron protocol to serve bundled assets to the renderer
-  - `renderer.js`: model URL changed from CDN to `app-asset://vosk/vosk-model-small-en-us-0.15.tar.gz`
-  - `electron-builder.json`: model added as `extraResources` (outside ASAR, at `resources/vosk/`)
-  - CSP updated: removed `https://ccoreilly.github.io`, added `app-asset: blob:` to `connect-src`
-  - Status message no longer mentions "downloads ~45 MB"
+### Fixed
+- Projection window now reads `preferred_hdmi_monitor` on every open, not just once at launch
+- NDI window position and size persisted to DB and restored on next open
+- Web Speech API: confidence filter added for low-quality results; `recognition.lang` re-asserted on each restart; non-recoverable errors handled correctly
+- Version number on About page now read dynamically from `app.getVersion()`
+- In-memory verse cache added in `db.js` — avoids repeated JSON parsing of large translation data
+- `verse:navigate` routed through `getTranslationVerses()` with error handling
+- Live transcript capped at 60,000 characters via `appendToTranscript()` helper
+- AI summary now sends only the last 2,000 words to OpenAI
+- Scraper popup cleanup fires on OS window close via `beforeunload`
+- Bible Gateway scraper CSS layout misalignment fixed in Settings page
 
 ---
 
-## v1.1.1 — 2026-04-16 (Bug Fix Pass + Release)
+## [1.4.0] — 2026-04-19
 
-### Critical
-- **BUG-01** — Fixed stale `displayWindowOpen` flag when the projection window is closed via OS
-  - `main.js`: `createDisplayWindow()` now sends `display:window-closed` IPC to operator on window close
-  - `preload.js`: exposed `onDisplayClosed(callback)` via contextBridge
-  - `src/renderer/renderer.js`: handles `display:window-closed` — resets flag, updates buttons, unchecks HDMI toggle, persists setting
-- **BUG-10** — Fixed update checker placeholder: `GITHUB_OWNER='OWNER'` → `'jnthnfr'`, repo `'biblecast'` → `'BibleCast'`
+### Added
+- **Standby screen** — upload a church logo or image to show on the projection display when no verse is active; configurable fit and opacity in Settings → Display
+- **Lower-third independent settings** — lower-third bar has its own background (solid / gradient / transparent) and auto-fit toggle, separate from fullscreen settings
+- **Background picker** — colour swatches and gradient presets available in both the Display tab and Settings panel
+- **History click-to-queue** — clicking any verse in the History panel queues it in Studio Preview
 
-### Medium
-- **BUG-03** — Eliminated HDMI auto-open race condition on first launch
-  - `loadAllSettings()` now only auto-opens the display window once (guarded by `settingsLoaded` flag)
-  - Added 1200ms delay so KJV auto-seed completes before the display window initialises
-- **BUG-04** — Hardened Vosk packaging: added `node_modules/vosk-browser/dist/**/*` explicitly to `electron-builder.json`
-- **BUG-05** — Fixed Whisper stop discarding the last audio chunk: threshold `> 16000` → `> 8000` samples
-- **BUG-09** — Hardened Python scraper: pinned `meaningless>=0.9`; added post-scrape guard that errors on < 100 verses
+### Changed
+- Project / Prev / Next buttons moved to the Studio Preview panel
+- Stop Projection now closes all active outputs (HDMI, NDI, HDMI Mirror) and unchecks their toggles
 
-### Low / Cleanup
-- **BUG-12** — Keyword prediction now includes 3-letter theological words (`sin`, `God`, `law`) — min length `> 3` → `> 2`
-- **BUG-13** — Display sync always updates live canvas from DB; removed stale DOM guard
-- **BUG-14** — `bible-parser.js` wired into `verse:search` IPC handler; queries now normalised before DB lookup
-
-### Cosmetic / Error UX
-- **BUG-15** — `loadAllSettings()` no longer re-opens HDMI/NDI windows on every settings save
-- **BUG-16** — `getDb()` now shows a readable error dialog if `better-sqlite3` fails to load
-- Bumped `package.json` version: `1.1.0` → `1.1.1`
+### Fixed
+- Background type switching now works correctly after uploading an image
+- Solid/gradient colour rows no longer disappear after saving settings
 
 ---
 
-## v1.1.0 — 2026-04-16
+## [1.3.0] — 2026-04-17
 
-### Bible Gateway Scraper
-- Added `src/scraper/` — new popup window with a checklist of 29 translations (ESV, NIV, NASB, NKJV, NLT, AMP, CSB, and more)
-- Added `scripts/scrape_bible.py` — Python 3 scraper using `meaningless.WebExtractor`
-  - Detects and auto-installs `meaningless` pip package if missing
-  - Scrapes chapter-by-chapter using known chapter counts for all 66 books
-  - Parses Unicode superscript verse numbers from plain strings (verse 1 has no prefix — handled explicitly)
-  - Outputs newline-delimited JSON to stdout for real-time Electron progress streaming
-- `main.js` — added `createScraperWindow()` and 4 new IPC handlers:
-  - `scraper:open` — opens/focuses the popup
-  - `scraper:check-python` — detects Python 3 on PATH, returns version + executable path
-  - `scraper:start` — spawns Python per translation, streams progress, imports to SQLite on completion
-  - `scraper:cancel` — kills the active Python process
-- `preload.js` — exposed 5 new scraper APIs to renderers
-- `src/renderer/index.html` — added "Bible Gateway Scraper" sub-section in Settings → Bibles
-- `src/renderer/renderer.js` — wired up the "Open Bible Gateway Scraper…" button
-- `electron-builder.json` — added `scrape_bible.py` as `extraResources` so it bundles in packaged builds
+### Added
+- **Auto-updates** — `electron-updater` replaces the old manual update checker; updates download in the background with progress and a one-click "Restart & Install" prompt
+- Update checked automatically 10 s after launch (packaged builds only); manual check available in Settings
 
-**Bug fixed during session:** Initial script used non-existent `BibleGatewayExtractor` class and `show_verse_numbers` kwarg — corrected to `WebExtractor` with only `show_passage_numbers=True`
+### Fixed
+- Live "LIVE" badge only activates when a verse is actively projected, not when the display is open but blank
+- Session name input auto-fills with current date/time on click
+- Local background image file paths now load correctly in the projection window (CSP fix)
+- Background image setting in Settings tab now syncs with the Display tab
+- Translation abbreviations no longer overlap names in the scraper popup; count label updates dynamically; footnote markers (`[a]`, `[b]`) stripped from verse text
+- App icon updated to a proper multi-resolution `.ico` file (taskbar, Start Menu, installer)
 
-### Git Identity
-- Removed hardcoded local git override (`BibleCast Dev / dev@biblecast.local`)
-- Set global git config to `Jonathan Freiku / 45103626+jnthnfr@users.noreply.github.com`
-- Rewrote all 17 commit messages with `git filter-branch` to remove `Co-Authored-By: Claude` trailers
-- Force-pushed cleaned history to `jnthnfr/BibleCast`
-
-### Documentation
-- `README.md` — full rewrite: complete feature list, both translation sources, updated project structure, prerequisites, tech stack
-- `DEVELOPER.md` — updated features table (24 features), full repo layout, expanded IPC channel reference (36 channels)
-- `CHANGELOG.md` — created this file
+### Infrastructure
+- GitHub Actions CI/CD — builds and publishes releases automatically on version tag push
 
 ---
 
-## Session: Prior (v1.0.1 and earlier)
+## [1.2.0] — 2026-04
 
-> Detailed implementation notes moved here from README / DEVELOPER.md for reference.
+### Added
+- **HDMI Mirror window** — second operator-facing window mirroring the projection output
+- **Layout-aware auto-fit** — font size scales automatically for both fullscreen and lower-third layouts
 
-### Vosk Real-Time Speech Recognition
-- Replaced Web Speech API (broken in Electron) with Vosk via `vosk-browser` WASM
-- Added `startVoskCapture()` / `stopVoskCapture()` in `renderer.js`
-- Model loaded dynamically from CDN on first use (~45 MB, cached after)
-- Partial results shown in transcript as user speaks; final results trigger verse prediction
-- Fixed CSP (`main.js`) to allow `blob:` Workers and model download from `ccoreilly.github.io`
-- Vosk set as default speech engine; Web Speech API retained as fallback option
-
-### Whisper AI (CPU + GPU)
-- Integrated `@xenova/transformers` for local neural network transcription
-- Added GPU worker window (`src/whisper/`) — hidden `BrowserWindow` running WebGPU inference
-- CPU thread count configurable; auto mode uses half available cores
-- Model size selectable: tiny / base / small
-- Progress events streamed to operator panel during model download/load
-
-### Scripture Detection & Auto-Projection
-- `SCRIPTURE_REF_RE` regex detects spoken/typed references (e.g. "John three sixteen")
-- Keyword extraction with stop-word filtering and confidence thresholds (low/medium/high)
-- `runPrediction()` tries reference match first, falls back to keyword search
-- Auto-projection with configurable cooldown (proj_debounce setting)
-- Prediction results shown in "PREDICTED VERSES" panel in right sidebar
-
-### Voice Commands
-- Detected in live transcript: next/previous verse, clear/hide screen, show/project verse, repeat
-- Toggle in top bar; only active when a session is running
-
-### AI Sermon Summary
-- Local mode: keyword frequency extraction, updates as transcript grows
-- AI mode: GPT-3.5 via OpenAI API (key stored in settings), triggers every 200 new words
-- Refresh button to regenerate on demand
-
-### NDI Virtual Output
-- Second `BrowserWindow` (`createNdiWindow()`) renders the same display as the HDMI window
-- Borderless, always-on-top, sized at 40% of primary monitor width in 16:9 ratio
-- Independently controllable layout (full / lower-third)
-- Toggle in Outputs tab
-
-### Display Improvements
-- Custom backgrounds: solid colour, gradient (with presets), image upload/URL
-- Transition speed slider (0–5 s CSS fade)
-- Text colour picker with reset
-- Show/hide translation label and verse reference toggles
-- Layout mode per output: full-screen or lower-third
-
-### Bible Translation System
-- 14 public-domain translations downloadable from getbible.net API
-- XML import: supports Holy Bible XML (BIBLEBOOK/VERS), OSIS, and Zefania formats
-- Bundled KJV auto-seeded on first launch from `data/translations/kjv.json`
-- Translation dropdown refreshes automatically after any import/download
-
-### Sessions & History
-- Named sessions with active/inactive state
-- All projected verses logged with timestamp and translation
-- History view: click a session to see all verses displayed in that service
-- Auto-session option: create session automatically on launch
-
-### UI — Operator Panel
-- OBS-style layout: STUDIO preview + LIVE OUTPUT side by side
-- Resizable splitters between panels
-- Right sidebar with Search / Display / Outputs tabs
-- Collapsible sections, segmented buttons, slider labels
-- Top bar: microphone selector, Start Listening button, Auto-Project and Voice Commands toggles
-- Toast notifications for save/import confirmations
-- Update banner shown when a new GitHub release is found
-
-### Application
-- Update checker polls GitHub releases API 8 s after launch
-- Hardware info display (CPU cores + GPU name) in Settings → AI Performance
-- Monitor selector in Outputs tab
-- Settings persist to SQLite `settings` table; propagate to display windows in real time
+### Fixed
+- Display sync fixes
+- Live preview flash removed
+- Font size dropdown replaced with slider
+- Reference text styling improvements
 
 ---
 
-## Version History
+## [1.1.4] — 2026-04-16
 
-| Version | Date | Notes |
-|---|---|---|
-| 1.1.1 | 2026-04 | Bug fix pass: display sync, HDMI race condition, Vosk packaging, scraper hardening |
-| 1.1.0 | 2026-04 | Bible Gateway scraper, Vosk STT, NDI output, GPU Whisper, custom backgrounds |
-| 1.0.1 | 2026-04 | Bible search, scripture detection, hardware acceleration, UI fixes |
-| 1.0.0 | 2026-04 | Initial release — verse projection, sessions, multi-monitor, Whisper AI |
+### Added
+- **Chrome Web Speech Bridge** — "Web Speech API" option spawns a hidden Chrome instance running `webkitSpeechRecognition` and pipes results back via a local HTTP server on `127.0.0.1`; no new npm dependencies; Chrome killed on Stop and on quit
+
+---
+
+## [1.1.3] — 2026-04-16
+
+### Changed
+- Pressing Enter in the manual search box now searches and immediately projects the top result; first result highlighted as selected
+
+---
+
+## [1.1.2] — 2026-04-16
+
+### Changed
+- Vosk model (`vosk-model-small-en-us-0.15`, 39 MB) bundled with the app — no internet download required on first use
+
+---
+
+## [1.1.1] — 2026-04-16
+
+### Fixed
+- Projection window closed via OS no longer leaves a stale open flag
+- Update checker pointed at correct GitHub owner/repo
+- HDMI auto-open race condition on first launch resolved
+- Vosk packaging hardened in `electron-builder.json`
+- Whisper stop no longer discards the last audio chunk
+- Python scraper pinned to `meaningless>=0.9`; errors if fewer than 100 verses returned
+- Keyword prediction now includes 3-letter theological words (sin, God, law)
+- Display sync always updates live canvas from DB
+- `bible-parser.js` wired into `verse:search` IPC handler
+- Settings save no longer re-opens HDMI/NDI windows
+- Readable error dialog shown if `better-sqlite3` fails to load
+
+---
+
+## [1.1.0] — 2026-04-16
+
+### Added
+- **Bible Gateway Scraper** — popup with checklist of 29 translations (ESV, NIV, NASB, NKJV, NLT, AMP, CSB, and more); Python 3 scraper using `meaningless`; streams progress to Electron in real time
+- **Vosk STT** — offline WASM speech recognition; model bundled with app
+- **NDI virtual output** — second output window for OBS/broadcast mixing
+- **GPU Whisper** — WebGPU inference in a hidden worker window
+- **Custom backgrounds** — solid colour, gradient (with presets), image upload/URL
+- **Transition speed** — slider for CSS fade duration
+- **Text styling** — colour picker, show/hide translation label and reference
+- **Layout modes** — full-screen or lower-third per output window
+
+---
+
+## [1.0.1] — 2026-04
+
+### Added
+- Verse search by reference or keyword
+- Scripture detection pipeline
+- Hardware acceleration info panel
+
+### Fixed
+- Various UI fixes
+
+---
+
+## [1.0.0] — 2026-04
+
+### Initial release
+- Verse projection to HDMI output
+- Sessions and history logging
+- Multi-monitor support
+- Whisper AI integration (CPU)
+- 14 public-domain translations downloadable in-app
+- XML import (Holy Bible XML, OSIS, Zefania)
+- Bundled KJV auto-seeded on first launch
+- AI sermon summary via OpenAI API
+- Voice commands (next / previous / clear / repeat)
+- Operator panel layout
