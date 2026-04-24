@@ -132,6 +132,9 @@
                 <button id="next-btn" class="btn-clear" disabled title="Next Verse">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
                 </button>
+                <button id="clear-hdmi-btn" class="btn-clear" disabled title="Clear HDMI — show standby screen">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
               </div>
             </div>
 
@@ -152,6 +155,9 @@
             </div>
 
           </div><!-- /.preview-row -->
+
+          <!-- Drag handle: resize transcript panel height -->
+          <div class="splitter-h" id="transcript-splitter" title="Drag to resize"></div>
 
           <!-- BOTTOM: LIVE TRANSCRIPT + SERMON SUMMARY -->
           <div class="transcript-panel">
@@ -227,27 +233,39 @@
             </div>
 
             <hr class="rs-divider" style="margin-top:10px" />
-            <div class="rs-field-lbl-row" style="margin-bottom:4px">
-              <span class="rs-field-lbl" style="margin:0">BROWSE BIBLE</span>
-              <button id="browse-toggle-btn" class="btn btn-secondary btn-sm" style="font-size:0.7rem;padding:3px 8px">Show</button>
-            </div>
-            <div id="bible-browser" style="display:none">
-              <div id="bb-books" class="bb-grid"></div>
-              <div id="bb-nav" class="bb-nav" style="display:none">
-                <button id="bb-back-btn" class="btn btn-secondary btn-sm bb-back">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-                  <span id="bb-back-label">Books</span>
-                </button>
-                <span id="bb-crumb" class="bb-crumb"></span>
+            <div class="rs-field-lbl">BROWSE BIBLE</div>
+            <div id="bible-browser-wrap">
+              <div id="bible-browser">
+                <div id="bb-books" class="bb-grid"></div>
+                <div id="bb-nav" class="bb-nav" style="display:none">
+                  <button id="bb-back-btn" class="btn btn-secondary btn-sm bb-back">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                    <span id="bb-back-label">Books</span>
+                  </button>
+                  <span id="bb-crumb" class="bb-crumb"></span>
+                </div>
+                <div id="bb-chapters" class="bb-grid" style="display:none"></div>
+                <div id="bb-verses" class="bb-vlist" style="display:none"></div>
               </div>
-              <div id="bb-chapters" class="bb-grid" style="display:none"></div>
-              <div id="bb-verses" class="bb-vlist" style="display:none"></div>
             </div>
 
-            <hr class="rs-divider" style="margin-top:10px" />
+            <!-- Drag handle: resize bible browser height -->
+            <div class="splitter-h" id="bible-browser-splitter" title="Drag to resize"></div>
+
+            <hr class="rs-divider" style="margin-top:6px" />
             <div class="rs-field-lbl">INSTALLED BIBLES</div>
             <div id="translations-list" class="translations-installed"></div>
             <p class="rs-info" style="margin-top:6px">To download or import translations, go to Settings.</p>
+
+            <!-- Following verses — matches Browse Bible layout, shown when a verse is live -->
+            <div id="following-strip" style="display:none">
+              <hr class="rs-divider" style="margin-top:10px" />
+              <div class="rs-field-lbl-row" style="margin-bottom:4px">
+                <span class="rs-field-lbl" style="margin:0">FOLLOWING VERSES</span>
+                <span class="rs-info" style="margin:0;font-size:0.7rem">click to project</span>
+              </div>
+              <div id="following-list" class="following-list"></div>
+            </div>
           </div>
 
           <!-- ── Display pane ── -->
@@ -567,6 +585,9 @@
           </button>
           <button id="next-btn-dp" class="btn-clear" disabled title="Next Verse">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <button id="clear-hdmi-btn-dp" class="btn-clear" disabled title="Clear HDMI — show standby screen">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
 
@@ -1005,6 +1026,16 @@
               </div>
               <label class="toggle-wrap">
                 <input type="checkbox" id="setting-show-shortcuts">
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <div class="setting-name">Show following verses</div>
+                <div class="setting-desc">Display the next few verses below search results when a verse is projected, for quick navigation</div>
+              </div>
+              <label class="toggle-wrap">
+                <input type="checkbox" id="setting-show-following" checked>
                 <span class="toggle-track"></span>
               </label>
             </div>

@@ -548,6 +548,18 @@ function registerVerseHandlers() {
     return { ok: true };
   });
 
+  ipcMain.handle('verse:following', (_event, { reference, translation, count }) => {
+    const verses = getDb().getTranslationVerses(translation);
+    if (!verses) return [];
+    const idx = verses.findIndex(v => `${v.book} ${v.chapter}:${v.verse}` === reference);
+    if (idx < 0) return [];
+    return verses.slice(idx + 1, idx + 1 + (count || 8)).map(v => ({
+      ...v,
+      reference:   `${v.book} ${v.chapter}:${v.verse}`,
+      translation,
+    }));
+  });
+
   ipcMain.handle('verse:navigate', async (_event, { direction }) => {
     const state = getDb().getDisplayState();
     if (!state || !state.current_reference) return { ok: false };
@@ -867,9 +879,14 @@ function registerDisplayHandlers() {
             });
           }
         });
+      } else {
+        // Reuse the existing window — same OS handle so OBS keeps its capture source
+        ndiWindow.show();
       }
     } else {
-      if (ndiWindow) { ndiWindow.destroy(); ndiWindow = null; }
+      // Hide rather than destroy so the window handle (HWND) is stable across
+      // projection cycles. OBS window capture won't lose the source.
+      if (ndiWindow) ndiWindow.hide();
     }
     return { ok: true };
   });
@@ -899,6 +916,15 @@ function registerDisplayHandlers() {
     } else {
       if (hdmiMirrorWindow) { hdmiMirrorWindow.destroy(); hdmiMirrorWindow = null; }
     }
+    return { ok: true };
+  });
+
+  ipcMain.handle('display:clear-hdmi', () => {
+    // Clears HDMI (and mirror) back to standby without closing the window.
+    // NDI is intentionally excluded — it stays on the current verse.
+    const clearMsg = { type: 'clear' };
+    if (displayWindow)    displayWindow.webContents.send('display:update', clearMsg);
+    if (hdmiMirrorWindow) hdmiMirrorWindow.webContents.send('display:update', clearMsg);
     return { ok: true };
   });
 
