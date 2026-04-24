@@ -16,5 +16,6 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Claude Code worktrees (auto-generated, not project code)
-.claude/worktrees/
+# Claude Code — never commit to public repo
+CLAUDE.md
+.claude/
