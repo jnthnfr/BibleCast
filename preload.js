@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('biblecast', {
   navigateVerse: (direction) =>
     ipcRenderer.invoke('verse:navigate', { direction }),
 
+  getFollowingVerses: (reference, translation, count) =>
+    ipcRenderer.invoke('verse:following', { reference, translation, count }),
+
   blankDisplay: (blank) =>
     ipcRenderer.invoke('display:blank', blank),
 
@@ -68,6 +71,9 @@ contextBridge.exposeInMainWorld('biblecast', {
 
   onHdmiMirrorClosed: (callback) =>
     ipcRenderer.on('hdmi-mirror:closed', () => callback()),
+
+  clearHdmiDisplay: () =>
+    ipcRenderer.invoke('display:clear-hdmi'),
 
   sendDisplayLayout: (data) =>
     ipcRenderer.invoke('display:layout', data),

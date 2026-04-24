@@ -508,6 +508,58 @@ function initResizeSplitters() {
     });
   }
 
+  // Drag the splitter between preview row and transcript panel (vertical resize)
+  const transcriptSplit = document.getElementById('transcript-splitter');
+  const transcriptPanel = document.querySelector('.transcript-panel');
+  if (transcriptSplit && transcriptPanel) {
+    let draggingT = false, startYT = 0, startHT = 0;
+    transcriptSplit.addEventListener('mousedown', e => {
+      draggingT = true;
+      startYT   = e.clientY;
+      startHT   = transcriptPanel.getBoundingClientRect().height;
+      document.body.style.cursor    = 'ns-resize';
+      document.body.style.userSelect = 'none';
+    });
+    document.addEventListener('mousemove', e => {
+      if (!draggingT) return;
+      const newH = Math.max(80, Math.min(600, startHT - (e.clientY - startYT)));
+      transcriptPanel.style.height = newH + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+      if (!draggingT) return;
+      draggingT = false;
+      document.body.style.cursor    = '';
+      document.body.style.userSelect = '';
+      api.saveSetting('transcript_panel_height', String(transcriptPanel.getBoundingClientRect().height));
+    });
+  }
+
+  // Drag the splitter below bible browser (vertical resize)
+  const bbSplit = document.getElementById('bible-browser-splitter');
+  const bbWrap  = document.getElementById('bible-browser-wrap');
+  if (bbSplit && bbWrap) {
+    let draggingB = false, startYB = 0, startHB = 0;
+    bbSplit.addEventListener('mousedown', e => {
+      draggingB = true;
+      startYB   = e.clientY;
+      startHB   = bbWrap.getBoundingClientRect().height;
+      document.body.style.cursor    = 'ns-resize';
+      document.body.style.userSelect = 'none';
+    });
+    document.addEventListener('mousemove', e => {
+      if (!draggingB) return;
+      const newH = Math.max(60, Math.min(500, startHB + (e.clientY - startYB)));
+      bbWrap.style.height = newH + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+      if (!draggingB) return;
+      draggingB = false;
+      document.body.style.cursor    = '';
+      document.body.style.userSelect = '';
+      api.saveSetting('bible_browser_height', String(bbWrap.getBoundingClientRect().height));
+    });
+  }
+
   // Drag the splitter between main content and right sidebar
   const sideSplit    = document.getElementById('sidebar-splitter');
   const rightSidebar = document.querySelector('.right-sidebar');
@@ -1545,6 +1597,47 @@ function formatRef(v) {
   return `${v.book} ${v.chapter}:${v.verse}`;
 }
 
+// ── Following verses strip ────────────────────────────────────────────────────
+
+async function renderFollowingVerses(reference, translation) {
+  const strip = document.getElementById('following-strip');
+  const list  = document.getElementById('following-list');
+  if (!strip || !list) return;
+
+  // Respect the "show following verses" setting (defaults on)
+  const showFollowing = document.getElementById('setting-show-following');
+  if (showFollowing && !showFollowing.checked) { strip.style.display = 'none'; return; }
+
+  const verses = await api.getFollowingVerses(reference, translation, 10);
+  if (!verses || !verses.length) { strip.style.display = 'none'; return; }
+
+  list.innerHTML = verses.map((v, i) =>
+    `<div class="following-item" data-idx="${i}">
+      <span class="following-ref">${escapeHtml(v.reference)}</span>
+      <span class="following-text">${escapeHtml(v.text)}</span>
+    </div>`
+  ).join('');
+
+  list.querySelectorAll('.following-item').forEach((el, i) => {
+    el.addEventListener('click', async () => {
+      const v = verses[i];
+      selectVerse(v, null);
+      list.querySelectorAll('.following-item').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+      await pushVerse();
+    });
+  });
+
+  strip.style.display = 'block';
+}
+
+function clearFollowingVerses() {
+  const strip = document.getElementById('following-strip');
+  const list  = document.getElementById('following-list');
+  if (strip) strip.style.display = 'none';
+  if (list)  list.innerHTML = '';
+}
+
 // ── Display controls ──────────────────────────────────────────────────────────
 
 async function pushVerse() {
@@ -1559,6 +1652,13 @@ async function pushVerse() {
     updateDisplayBtn();
   }
 
+  // Open NDI if the toggle is enabled — mirrors HDMI open logic above.
+  // openNdiDisplay(true) creates the window on first use, or shows it if already hidden.
+  const ndiToggle = document.getElementById('ndi-toggle');
+  if (ndiToggle?.checked) {
+    await api.openNdiDisplay(true);
+  }
+
   const verse = { ...selectedVerse };
   if (!verse.translation) {
     verse.translation = document.getElementById('translation-select')?.value || 'KJV';
@@ -1570,6 +1670,7 @@ async function pushVerse() {
   updateLiveBadge(true);
   syncDisplayPreviewLarge(verse);
   await refreshHistory();
+  renderFollowingVerses(verse.reference, verse.translation);
 }
 
 async function stopProjecting() {
@@ -1587,12 +1688,12 @@ async function stopProjecting() {
     updateDisplayBtn();
   }
 
-  // Close NDI output
+  // Hide NDI output — use hide (not destroy) so the OS window handle stays stable
+  // and OBS window-capture won't lose the source. Toggle stays checked so the
+  // next Project click will re-show the same window automatically.
   const ndiToggle = document.getElementById('ndi-toggle');
   if (ndiToggle?.checked) {
     await api.openNdiDisplay(false);
-    ndiToggle.checked = false;
-    api.saveSetting('ndi_enabled', 'false');
   }
 
   // Close HDMI mirror
@@ -1608,6 +1709,21 @@ async function stopProjecting() {
   if (lc) renderProjectionPreview(lc, null, true);
   const dc = document.getElementById('display-canvas');
   if (dc) renderProjectionPreview(dc, null, true);
+  clearFollowingVerses();
+}
+
+async function clearHdmiDisplay() {
+  isProjecting = false;
+  isBlank      = false;
+  _lastSyncKey = null;
+  await api.clearHdmiDisplay();
+  updatePushButton(false);
+  updateLiveBadge(false);
+  const lc = document.getElementById('live-canvas');
+  if (lc) renderProjectionPreview(lc, null, false);
+  const dc = document.getElementById('display-canvas');
+  if (dc) renderProjectionPreview(dc, null, false);
+  clearFollowingVerses();
 }
 
 async function toggleBlank() {
@@ -1704,6 +1820,12 @@ function updateDisplayBtn() {
   const hdmiToggle = document.getElementById('hdmi-toggle');
   if (hdmiToggle) hdmiToggle.checked = displayWindowOpen;
   api.saveSetting('hdmi_enabled', displayWindowOpen.toString());
+
+  // Clear button is only useful while the HDMI window is open
+  ['clear-hdmi-btn', 'clear-hdmi-btn-dp'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !displayWindowOpen;
+  });
 }
 
 function updateStatusBadge(live) {
@@ -1931,12 +2053,14 @@ async function loadAllSettings() {
     hdmiToggle.checked = hdmiEnabled;
   }
 
-  // Restore NDI toggle & re-open NDI window if it was enabled (only on first load)
+  // Restore NDI toggle & re-open NDI window if it was enabled (only on first load).
+  // After startup, never overwrite the toggle from DB — the live checkbox state is
+  // authoritative so that saveAllSettings → loadAllSettings cycles don't clobber it.
   const ndiToggle = document.getElementById('ndi-toggle');
-  if (ndiToggle) {
+  if (ndiToggle && !startupWindowsOpened) {
     const ndiEnabled = s.ndi_enabled === 'true';
     ndiToggle.checked = ndiEnabled;
-    if (!startupWindowsOpened && ndiEnabled) await api.openNdiDisplay(true);
+    if (ndiEnabled) await api.openNdiDisplay(true);
   }
 
   // Restore HDMI mirror toggle (Display Settings pane)
@@ -1951,6 +2075,16 @@ async function loadAllSettings() {
   // Restore HDMI layout button
   if (s.hdmi_layout) setActiveSegBtn('hdmi-layout', s.hdmi_layout);
   if (s.ndi_layout)  setActiveSegBtn('ndi-layout',  s.ndi_layout);
+
+  // Restore saved panel heights
+  if (s.transcript_panel_height) {
+    const tp = document.querySelector('.transcript-panel');
+    if (tp) tp.style.height = s.transcript_panel_height + 'px';
+  }
+  if (s.bible_browser_height) {
+    const bb = document.getElementById('bible-browser-wrap');
+    if (bb) bb.style.height = s.bible_browser_height + 'px';
+  }
 
   startupWindowsOpened = true;
 }
@@ -2024,7 +2158,8 @@ async function loadSettingsView() {
   setCheckbox('setting-auto-session',      s.auto_session      === 'true');
   setCheckbox('setting-clear-transcript',  s.clear_transcript  === 'true');
   // Application
-  setCheckbox('setting-show-shortcuts', s.show_shortcuts === 'true');
+  setCheckbox('setting-show-shortcuts',  s.show_shortcuts  === 'true');
+  setCheckbox('setting-show-following',  s.show_following  !== 'false');
 
   // Refresh bibles lists in settings
   const installed = await api.listTranslations();
@@ -2072,6 +2207,7 @@ async function saveAllSettings() {
     ['auto_session',            getCheckbox('setting-auto-session')],
     ['clear_transcript',        getCheckbox('setting-clear-transcript')],
     ['show_shortcuts',          getCheckbox('setting-show-shortcuts')],
+    ['show_following',          getCheckbox('setting-show-following')],
   ];
 
   for (const [k, v] of pairs) {
@@ -2286,13 +2422,6 @@ function initBibleBrowser() {
     }
   });
 
-  document.getElementById('browse-toggle-btn')?.addEventListener('click', () => {
-    const browser = document.getElementById('bible-browser');
-    const btn     = document.getElementById('browse-toggle-btn');
-    const hidden  = browser.style.display === 'none';
-    browser.style.display = hidden ? 'block' : 'none';
-    btn.textContent       = hidden ? 'Hide' : 'Show';
-  });
 }
 
 function bindEvents() {
@@ -2336,10 +2465,12 @@ function bindEvents() {
   document.getElementById('push-btn')?.addEventListener('click', () => isProjecting ? stopProjecting() : pushVerse());
   document.getElementById('next-btn')?.addEventListener('click', () => navigateVerse('next'));
   document.getElementById('prev-btn')?.addEventListener('click', () => navigateVerse('prev'));
+  document.getElementById('clear-hdmi-btn')?.addEventListener('click', clearHdmiDisplay);
 
   document.getElementById('push-btn-dp')?.addEventListener('click', () => isProjecting ? stopProjecting() : pushVerse());
   document.getElementById('next-btn-dp')?.addEventListener('click', () => navigateVerse('next'));
   document.getElementById('prev-btn-dp')?.addEventListener('click', () => navigateVerse('prev'));
+  document.getElementById('clear-hdmi-btn-dp')?.addEventListener('click', clearHdmiDisplay);
 
   // Arrow key verse navigation — skip when focus is inside a text input
   document.addEventListener('keydown', e => {
@@ -2551,7 +2682,13 @@ function bindEvents() {
       const r = await api.openDisplay();
       displayWindowOpen = !!r.open;
       updateDisplayBtn();
-      if (displayWindowOpen && selectedVerse) await pushVerse();
+      if (displayWindowOpen && selectedVerse) {
+        await pushVerse(); // pushVerse also opens NDI if toggle is on
+      } else if (!displayWindowOpen) {
+        // HDMI closed — mirror to NDI
+        const ndiToggle = document.getElementById('ndi-toggle');
+        if (ndiToggle?.checked) await api.openNdiDisplay(false);
+      }
     }
   });
   document.getElementById('ndi-toggle')?.addEventListener('change', async e => {
@@ -2616,6 +2753,9 @@ function bindEvents() {
     updateDisplayBtn(); // also unchecks hdmi-toggle and saves hdmi_enabled=false
     updateStatusBadge(false);
     updateLiveBadge(false);
+    // Mirror HDMI close to NDI
+    const ndiToggle = document.getElementById('ndi-toggle');
+    if (ndiToggle?.checked) api.openNdiDisplay(false);
   });
 
   // Navigate to settings (from main process)
