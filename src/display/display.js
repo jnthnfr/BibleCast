@@ -2,8 +2,10 @@
 
 const api = window.biblecast;
 
+const isNdiWindow = new URLSearchParams(window.location.search).get('ndi') === '1';
+
 // NDI window: inject a thin drag bar so the frameless window can be moved
-if (new URLSearchParams(window.location.search).get('ndi') === '1') {
+if (isNdiWindow) {
   const bar = document.createElement('div');
   bar.style.cssText = [
     'position:fixed', 'top:0', 'left:0', 'right:0', 'height:18px',
@@ -66,6 +68,15 @@ async function init() {
 }
 
 function handleUpdate(data) {
+  if (data.type === 'clear') {
+    // Return to standby: remove has-verse so the standby screen fades back in.
+    // Does not close the window or show the black blank-screen overlay.
+    document.body.classList.remove('has-verse', 'blanked');
+    const container = document.getElementById('verse-container');
+    if (container) container.innerHTML = '';
+    return;
+  }
+
   if (data.type === 'blank') {
     setBlank(!data.visible);
     return;
@@ -225,7 +236,10 @@ function applySettings(s) {
   }
 
   if (s.theme) {
-    document.body.className = 'theme-' + s.theme + (document.body.classList.contains('blanked') ? ' blanked' : '');
+    // Toggle only the theme class — preserves has-verse, has-standby-image,
+    // layout-lower-third, blanked, etc. that other code manages independently.
+    document.body.classList.remove('theme-dark', 'theme-light', 'theme-blue');
+    document.body.classList.add('theme-' + s.theme);
   }
 
   if (s.show_reference   != null) showReference    = s.show_reference   !== false && s.show_reference   !== 'false';
@@ -244,8 +258,8 @@ function applySettings(s) {
     document.body.style.background = `url('${s.bg_image_url}') center/cover no-repeat`;
   }
 
-  // Standby screen
-  if (s.standby_type != null) {
+  // Standby screen — HDMI only; NDI output is a live feed and should never show it
+  if (s.standby_type != null && !isNdiWindow) {
     const standbyImg = document.getElementById('standby-img');
     if (s.standby_type === 'image' && s.standby_image_url) {
       if (standbyImg) {
