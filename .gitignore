@@ -16,6 +16,7 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Claude Code — never commit to public repo
+# Local dev config, never commit to public repo
 CLAUDE.md
 .claude/
+*.claude
