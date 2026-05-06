@@ -38,22 +38,50 @@ function debounce(func, wait) {
 }
 
 /**
- * Create a throttled function that executes at most once per wait ms
+ * Create a throttled function that fires at most once per wait ms.
+ *
+ * Leading edge: the first call in a quiet period fires immediately.
+ * Trailing edge: if any calls land during the wait window, the function
+ * fires once more after the window closes, using the most recent args.
+ *
+ * The previous implementation called setTimeout on every call inside
+ * the throttle window without clearing the previous handle, which
+ * produced N trailing fires for N calls instead of one.
  */
 function throttle(func, wait) {
-  let timeout;
+  let timeout = null;
   let previous = 0;
-  return function executedFunction(...args) {
+  let lastArgs = null;
+
+  return function throttled(...args) {
     const now = Date.now();
-    if (!timeout && now >= previous + wait) {
+    const remaining = wait - (now - previous);
+    lastArgs = args;
+
+    // Leading edge (or clock skew put `previous` in the future).
+    if (remaining <= 0 || remaining > wait) {
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
       previous = now;
-      func(...args);
-    } else {
+      const callArgs = lastArgs;
+      lastArgs = null;
+      func(...callArgs);
+      return;
+    }
+
+    // Trailing edge: schedule exactly one call at the end of the window.
+    if (!timeout) {
       timeout = setTimeout(() => {
         previous = Date.now();
         timeout = null;
-        func(...args);
-      }, wait);
+        if (lastArgs) {
+          const callArgs = lastArgs;
+          lastArgs = null;
+          func(...callArgs);
+        }
+      }, remaining);
     }
   };
 }
