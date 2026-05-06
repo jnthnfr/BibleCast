@@ -98,9 +98,16 @@ let ndiWindow         = null;
 let hdmiMirrorWindow  = null;
 let gpuWorkerWindow   = null;
 let scraperWindow     = null;
-let pendingGpuResolve = null;
 let activeScrapeProc  = null;
 let db = null;
+
+// Whisper GPU dispatch: each transcribe call gets a unique requestId so the
+// worker's reply can be routed back to the right caller. A single shared
+// resolve was fragile: rapid back-to-back calls would overwrite the previous
+// resolve (leaking that promise) and a slow first result could resolve a
+// faster successor's promise with stale text.
+let nextGpuRequestId = 0;
+const pendingGpuRequests = new Map(); // requestId -> resolve fn
 
 const http  = require('http');
 const https = require('https');
@@ -966,8 +973,14 @@ function registerDisplayHandlers() {
 }
 
 function registerWhisperHandlers() {
-  ipcMain.on('whisper:gpu:result', (_e, result) => {
-    if (pendingGpuResolve) { pendingGpuResolve(result); pendingGpuResolve = null; }
+  // Worker results carry the requestId we sent on the way in; route by id.
+  ipcMain.on('whisper:gpu:result', (_e, payload) => {
+    const { requestId, ...result } = payload || {};
+    const resolve = pendingGpuRequests.get(requestId);
+    if (resolve) {
+      pendingGpuRequests.delete(requestId);
+      resolve(result);
+    }
   });
   ipcMain.on('whisper:gpu:progress', (_e, p) => {
     operatorWindow?.webContents.send('whisper:progress', p);
@@ -975,7 +988,15 @@ function registerWhisperHandlers() {
 
   ipcMain.handle('whisper:set-gpu', (_e, enable) => {
     if (enable && !gpuWorkerWindow) createGpuWorkerWindow();
-    if (!enable && gpuWorkerWindow) { gpuWorkerWindow.destroy(); gpuWorkerWindow = null; }
+    if (!enable && gpuWorkerWindow) {
+      gpuWorkerWindow.destroy();
+      gpuWorkerWindow = null;
+      // Settle any in-flight GPU requests so their promises do not hang.
+      for (const [id, resolve] of pendingGpuRequests) {
+        resolve({ ok: false, error: 'GPU worker shut down' });
+        pendingGpuRequests.delete(id);
+      }
+    }
     return { ok: true };
   });
 
@@ -984,12 +1005,17 @@ function registerWhisperHandlers() {
     if (useGpu && gpuWorkerWindow) {
       const cacheDir = path.join(app.getPath('userData'), 'whisper-models');
       return new Promise(resolve => {
-        pendingGpuResolve = resolve;
-        gpuWorkerWindow.webContents.send('whisper:gpu:transcribe', { audioArray, modelId, cacheDir });
+        const requestId = ++nextGpuRequestId;
+        pendingGpuRequests.set(requestId, resolve);
+        gpuWorkerWindow.webContents.send('whisper:gpu:transcribe', {
+          requestId, audioArray, modelId, cacheDir,
+        });
         setTimeout(() => {
-          if (pendingGpuResolve) {
-            pendingGpuResolve({ ok: false, error: 'GPU timeout — falling back to CPU' });
-            pendingGpuResolve = null;
+          // Only fire the timeout if our request is still pending; a
+          // faster success path may have already settled it.
+          if (pendingGpuRequests.has(requestId)) {
+            pendingGpuRequests.delete(requestId);
+            resolve({ ok: false, error: 'GPU timeout, falling back to CPU' });
           }
         }, 30000);
       });
