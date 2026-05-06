@@ -1010,6 +1010,25 @@ function registerWhisperHandlers() {
   });
 }
 
+function registerVoskHandlers() {
+  // Returns the bundled Vosk speech model as a binary buffer.
+  // Source: assets/vosk/... in dev, process.resourcesPath/vosk/... when packaged.
+  // The renderer wraps the buffer in a Blob and hands it to vosk-browser.
+  ipcMain.handle('vosk:read-model', async () => {
+    const fileName = 'vosk-model-small-en-us-0.15.tar.gz';
+    const modelPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'vosk', fileName)
+      : path.join(__dirname, 'assets', 'vosk', fileName);
+
+    try {
+      // Buffer is transferred to the renderer as a Uint8Array, which Blob() accepts.
+      return await fs.promises.readFile(modelPath);
+    } catch (err) {
+      throw new Error(`Vosk model not found at ${modelPath}: ${err.message}`);
+    }
+  });
+}
+
 function registerAiHandlers() {
   ipcMain.handle('ai:summarize', async (_event, { transcript, apiKey }) => {
     if (!apiKey || !transcript || transcript.trim().split(/\s+/).length < 30)
@@ -1407,6 +1426,7 @@ function registerIpcHandlers() {
   registerTranslationHandlers();
   registerSettingsHandlers();
   registerWhisperHandlers();
+  registerVoskHandlers();
   registerAiHandlers();
   registerUpdateHandlers();
   registerScraperHandlers();
