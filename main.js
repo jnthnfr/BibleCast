@@ -379,8 +379,23 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-// Force-exit after a short grace period so ONNX/worker threads don't keep the process alive
+// Single before-quit handler: clean up child processes and the local
+// Chrome bridge server, then force-exit after a short grace period so
+// ONNX/worker threads don't keep the process alive.
 app.on('before-quit', () => {
+  if (chromeProcess) {
+    try { chromeProcess.kill(); } catch (_) {}
+    chromeProcess = null;
+  }
+  if (activeScrapeProc) {
+    try { activeScrapeProc.kill(); } catch (_) {}
+    activeScrapeProc = null;
+  }
+  if (chromeBridgeServer) {
+    try { chromeBridgeServer.close(); } catch (_) {}
+    chromeBridgeServer = null;
+    chromeBridgePort = 0;
+  }
   setTimeout(() => process.exit(0), 300);
 });
 
@@ -1439,12 +1454,4 @@ function registerIpcHandlers() {
   registerUpdateHandlers();
   registerScraperHandlers();
   registerChromeBridgeHandlers();
-
-  app.on('before-quit', () => {
-    if (chromeProcess) { chromeProcess.kill(); chromeProcess = null; }
-    if (activeScrapeProc) {
-      try { activeScrapeProc.kill(); } catch (_) {}
-      activeScrapeProc = null;
-    }
-  });
 }
