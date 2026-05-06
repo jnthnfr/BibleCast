@@ -1168,32 +1168,8 @@ function showPredictions(verses) {
 }
 
 // ── Voice commands ────────────────────────────────────────────────────────────
-
-function checkVoiceCommands(text) {
-  if (!document.getElementById('voice-cmds-toggle')?.checked) return;
-  const lower = text.toLowerCase().trim();
-
-  if (/\b(next|next verse)\b/.test(lower)) {
-    navigateVerse('next');
-  } else if (/\b(previous|previous verse|go back)\b/.test(lower)) {
-    navigateVerse('prev');
-  } else if (/\b(clear|clear screen|clear the screen|hide|hide screen|hide the screen)\b/.test(lower)) {
-    if (!isBlank) toggleBlank();
-  } else if (/\b(show|show verse|project|project verse)\b/.test(lower)) {
-    if (isBlank) toggleBlank();
-    else if (selectedVerse) pushVerse();
-  } else if (/\b(repeat|repeat that|repeat verse)\b/.test(lower)) {
-    if (selectedVerse) pushVerse();
-  }
-}
-
-async function navigateVerse(direction) {
-  const result = await api.navigateVerse(direction === 'next' ? 'next' : 'prev');
-  if (result.ok && result.verse) {
-    selectVerse(result.verse, null);
-    await pushVerse();
-  }
-}
+// checkVoiceCommands and navigateVerse live in modules/voice-commands.js,
+// loaded earlier in index.html.
 
 // ── Sermon Summary ────────────────────────────────────────────────────────────
 
