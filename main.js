@@ -1415,6 +1415,14 @@ function registerChromeBridgeHandlers() {
       chromeProcess.kill();
       chromeProcess = null;
     }
+    // Close the local HTTP listener too so a fresh start-bridge gets a
+    // clean server on a fresh port, and so we do not hold a random port
+    // for the rest of the process lifetime.
+    if (chromeBridgeServer) {
+      try { chromeBridgeServer.close(); } catch (_) {}
+      chromeBridgeServer = null;
+      chromeBridgePort = 0;
+    }
     return { ok: true };
   });
 }
