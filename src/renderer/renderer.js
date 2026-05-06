@@ -1,30 +1,41 @@
-/* BibleCast — Operator Panel (Revelio Live style) */
+/* BibleCast: operator panel (renderer)
+ *
+ * The cross-cutting state, IPC bridge, and small shared helpers have moved
+ * out into modules under src/renderer/modules. Each module is loaded as a
+ * classic <script> before this file in index.html and shares the same
+ * script-level lexical scope, so the bindings below resolve by simple name.
+ *
+ *   modules/state.js          api, selectedVerse, isBlank, isProjecting,
+ *                             searchTimeout, lastProjectedAt,
+ *                             displayWindowOpen, hdmiMirrorOpen,
+ *                             startupWindowsOpened, settings
+ *   modules/utils-renderer.js formatRef, showToast,
+ *                             MAX_TRANSCRIPT_CHARS, appendToTranscript
+ *   modules/bible-data.js     BIBLE_BOOKS, SCRIPTURE_REF_RE, STOP_WORDS,
+ *                             BIBLE_CHAPTER_COUNTS
+ *   modules/bible-browser.js  initBibleBrowser, bbSelectedBook,
+ *                             bbSelectedChapter
+ *   modules/sessions.js       activeSession, loadSessions, createSession,
+ *                             refreshHistory
+ *   modules/voice-commands.js checkVoiceCommands, navigateVerse
+ *   modules/summary.js        summaryWordCount, updateSermonSummary,
+ *                             summarizeWithAI
+ *   modules/translations.js   availableCache, installedAbbrs,
+ *                             loadTranslations, refreshInstalledList,
+ *                             loadAvailableTranslations,
+ *                             renderAvailableList, renderAvailableInto,
+ *                             downloadTranslation, importTranslationFile,
+ *                             setImportStatus
+ *   modules/updater.js        checkForUpdates, initUpdaterEvents
+ */
 
-const api = window.biblecast;
+// ── Transcription engine state ────────────────────────────────────────────────
+// Kept here for now; will move with the transcription module in a later step.
 
-// ── Global state ──────────────────────────────────────────────────────────────
-
-let selectedVerse      = null;
-let isBlank            = false;
-let isProjecting       = false;
-let searchTimeout      = null;
-// activeSession is declared in modules/sessions.js (shared script-level binding)
-
-// Transcription
 let recognition        = null;
 let isListening        = false;
 let fullTranscript     = '';
 let predictionTimeout  = null;
-let lastProjectedAt    = 0;   // timestamp of last auto-projection
-
-// Whether the display window is currently open
-let displayWindowOpen = false;
-
-// Whether the HDMI mirror window is currently open
-let hdmiMirrorOpen = false;
-
-// Guards against re-opening NDI/HDMI windows on every settings save; only auto-opens on first load
-let startupWindowsOpened = false;
 
 // Whisper AI audio capture state
 let whisperAudioCtx    = null;
@@ -33,7 +44,6 @@ let whisperStream      = null;
 let whisperBuffer      = [];          // raw Float32 samples at 16 kHz
 let whisperFlushTimer  = null;        // interval to flush buffer every N seconds
 let whisperReady       = false;       // pipeline loaded flag
-// summaryWordCount is declared in modules/summary.js (shared script-level binding)
 
 // Vosk (vosk-browser WASM) audio capture state
 let voskModel          = null;
@@ -41,23 +51,6 @@ let voskRec            = null;
 let voskAudioCtx       = null;
 let voskProcessor      = null;
 let voskStream         = null;
-
-// Settings cache (loaded once, kept in sync)
-let settings = {
-  auto_project:           false,
-  confidence:             'medium',
-  require_session:        true,
-  debounce_ms:            1500,
-  proj_debounce:          5,
-  autostart_transcription: false,
-  theme:                  'dark',
-  font_size:              '100',
-  font_family:            'Georgia, serif',
-  custom_font_family:     '',
-  show_translation:       true,
-  show_reference:         true,
-  whisper_provider:       'web-speech',
-};
 
 // ── Projection Preview Renderer ───────────────────────────────────────────────
 // Creates a pixel-identical, scaled-down mirror of the actual display window.
@@ -1274,9 +1267,7 @@ function updatePushButton(projecting) {
   });
 }
 
-function formatRef(v) {
-  return `${v.book} ${v.chapter}:${v.verse}`;
-}
+// formatRef has moved to modules/utils-renderer.js.
 
 // ── Following verses strip ────────────────────────────────────────────────────
 
@@ -1908,15 +1899,7 @@ function getActiveSegBtn(groupId) {
   return document.querySelector(`#${groupId} .seg-btn.active`)?.dataset.val || 'solid';
 }
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
-
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  if (!t) return;
-  t.textContent = msg;
-  t.classList.add('visible');
-  setTimeout(() => t.classList.remove('visible'), 2500);
-}
+// showToast has moved to modules/utils-renderer.js.
 
 // ── Event binding ─────────────────────────────────────────────────────────────
 
@@ -2337,16 +2320,9 @@ function bindEvents() {
 
 // ── Update system ─────────────────────────────────────────────────────────────
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
-
-const MAX_TRANSCRIPT_CHARS = 60000; // ~10k words; prevents unbounded growth in long sessions
-
-function appendToTranscript(text) {
-  fullTranscript += text;
-  if (fullTranscript.length > MAX_TRANSCRIPT_CHARS) {
-    fullTranscript = fullTranscript.slice(-MAX_TRANSCRIPT_CHARS);
-  }
-}
+// MAX_TRANSCRIPT_CHARS and appendToTranscript have moved to
+// modules/utils-renderer.js. fullTranscript is still declared above
+// in the transcription state section.
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
