@@ -5,15 +5,20 @@
 
 // ── HTML Escaping ─────────────────────────────────────────────────────────────
 /**
- * Escape HTML special characters to prevent XSS
+ * Escape characters that have meaning in HTML so user-provided strings
+ * can be safely interpolated into innerHTML or attributes. Mirrors the
+ * implementation in src/lib/utils-browser.js so both contexts behave the
+ * same way (in particular: null/undefined returns '', not the literal
+ * string "null", and the apostrophe is escaped for attribute safety).
  */
 function escapeHtml(str) {
-  if (!str) return '';
+  if (str == null) return '';
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ── Debouncing ────────────────────────────────────────────────────────────────
