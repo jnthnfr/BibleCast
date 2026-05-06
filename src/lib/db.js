@@ -173,9 +173,17 @@ function listTranslations() {
 }
 
 function addTranslation({ name, abbreviation, language, data }) {
+  // Upsert by abbreviation. Using ON CONFLICT preserves the row id on
+  // re-import. INSERT OR REPLACE would delete and re-insert, breaking
+  // anything that ever references translations.id (and bumping the
+  // auto-increment counter unnecessarily).
   getDb().prepare(`
-    INSERT OR REPLACE INTO translations (name, abbreviation, language, data)
+    INSERT INTO translations (name, abbreviation, language, data)
     VALUES (?, ?, ?, ?)
+    ON CONFLICT(abbreviation) DO UPDATE SET
+      name     = excluded.name,
+      language = excluded.language,
+      data     = excluded.data
   `).run(name, abbreviation, language, JSON.stringify(data));
   verseCache.delete(abbreviation.toUpperCase());
 }
