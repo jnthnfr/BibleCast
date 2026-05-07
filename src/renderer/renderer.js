@@ -231,12 +231,12 @@ function initSegButtons() {
           // No UI row to toggle; just save on settings-save
         }
 
-        // HDMI layout — save + send to display window
+        // HDMI layout: save + send to display window
         if (group.id === 'hdmi-layout') {
           api.sendDisplayLayout({ target: 'hdmi', layout: val });
         }
 
-        // NDI layout — save + send to NDI window
+        // NDI layout: save + send to NDI window
         if (group.id === 'ndi-layout') {
           api.sendDisplayLayout({ target: 'ndi', layout: val });
         }
@@ -448,11 +448,6 @@ async function loadMicrophones() {
 // loaded earlier in index.html.
 
 
-// STOP_SVG, PLAY_SVG and updatePushButton live in
-// modules/display-output.js.
-
-// formatRef has moved to modules/utils-renderer.js.
-
 // ── Following verses strip ────────────────────────────────────────────────────
 
 // renderFollowingVerses and clearFollowingVerses live in
@@ -521,7 +516,7 @@ function bindEvents() {
   document.getElementById('translation-select')?.addEventListener('change', doSearch);
   document.getElementById('find-btn')?.addEventListener('click', doSearch);
 
-  // Display controls — Studio Preview (primary) + Display Preview view
+  // Display controls: Studio Preview (primary) + Display Preview view
   document.getElementById('push-btn')?.addEventListener('click', () => isProjecting ? stopProjecting() : pushVerse());
   document.getElementById('next-btn')?.addEventListener('click', () => navigateVerse('next'));
   document.getElementById('prev-btn')?.addEventListener('click', () => navigateVerse('prev'));
@@ -532,7 +527,7 @@ function bindEvents() {
   document.getElementById('prev-btn-dp')?.addEventListener('click', () => navigateVerse('prev'));
   document.getElementById('clear-hdmi-btn-dp')?.addEventListener('click', clearHdmiDisplay);
 
-  // Arrow key verse navigation — skip when focus is inside a text input
+  // Arrow key verse navigation: skip when focus is inside a text input
   document.addEventListener('keydown', e => {
     if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
     if (e.key === 'ArrowRight') navigateVerse('next');
@@ -566,7 +561,7 @@ function bindEvents() {
     if (e.key === 'Enter') createSession();
   });
 
-  // Right sidebar Display pane — all changes apply instantly
+  // Right sidebar Display pane: all changes apply instantly
   document.getElementById('setting-theme')?.addEventListener('change', liveDisplaySettings);
   document.getElementById('settings-font-family')?.addEventListener('change', e => {
     const customRow = document.getElementById('custom-font-row');
@@ -627,7 +622,7 @@ function bindEvents() {
   document.getElementById('setting-lt-bg-grad-start')?.addEventListener('input', liveDisplaySettings);
   document.getElementById('setting-lt-bg-grad-end')?.addEventListener('input', liveDisplaySettings);
 
-  // Color presets — data-target selects which input to update
+  // Color presets: data-target selects which input to update
   document.querySelectorAll('.color-preset').forEach(btn => {
     btn.addEventListener('click', () => {
       const targetId = btn.dataset.target || 'setting-bg-color';
@@ -637,7 +632,7 @@ function bindEvents() {
     });
   });
 
-  // Gradient presets — data-target-start/end selects which inputs to update
+  // Gradient presets: data-target-start/end selects which inputs to update
   document.querySelectorAll('.grad-preset').forEach(btn => {
     btn.addEventListener('click', () => {
       const startId = btn.dataset.targetStart || 'setting-bg-grad-start';
@@ -694,7 +689,7 @@ function bindEvents() {
       document.getElementById('standby-bg-solid-row').style.display    = 'none';
       document.getElementById('standby-bg-gradient-row').style.display = 'none';
       document.getElementById('standby-bg-url-row').style.display      = 'block';
-      showToast('Background image selected — save settings to apply');
+      showToast('Background image selected, save settings to apply');
     } else {
       showToast('Upload failed: ' + result.error);
     }
@@ -714,7 +709,7 @@ function bindEvents() {
       setActiveSegBtn('standby-screen-type', 'image');
       const opts = document.getElementById('standby-image-options');
       if (opts) opts.style.display = 'block';
-      showToast('Standby image selected — save settings to apply');
+      showToast('Standby image selected, save settings to apply');
     } else {
       showToast('Upload failed: ' + result.error);
     }
@@ -726,7 +721,7 @@ function bindEvents() {
     if (lbl) lbl.textContent = e.target.value + '%';
   });
 
-  // Right sidebar Outputs pane — toggle display window
+  // Right sidebar Outputs pane: toggle display window
   // Opening also projects the current verse (same as clicking Project)
   document.getElementById('open-display-btn')?.addEventListener('click', async () => {
     const result = await api.openDisplay();
@@ -745,7 +740,7 @@ function bindEvents() {
       if (displayWindowOpen && selectedVerse) {
         await pushVerse(); // pushVerse also opens NDI if toggle is on
       } else if (!displayWindowOpen) {
-        // HDMI closed — mirror to NDI
+        // HDMI closed: mirror to NDI
         const ndiToggle = document.getElementById('ndi-toggle');
         if (ndiToggle?.checked) await api.openNdiDisplay(false);
       }
@@ -807,7 +802,7 @@ function bindEvents() {
     }
   });
 
-  // Display window closed by OS — keep all state in sync
+  // Display window closed by OS: keep all state in sync
   api.onDisplayClosed(() => {
     displayWindowOpen = false;
     updateDisplayBtn(); // also unchecks hdmi-toggle and saves hdmi_enabled=false
@@ -826,7 +821,7 @@ function bindEvents() {
   // KJV auto-seeded
   api.onTranslationsReady(() => {
     loadTranslations();
-    showToast('KJV Bible loaded — ready to use!');
+    showToast('KJV Bible loaded, ready to use!');
   });
 
   // Bible Gateway scraper popup
@@ -847,7 +842,7 @@ function bindEvents() {
   // Refresh/regenerate AI summary button
   document.getElementById('refresh-summary-btn')?.addEventListener('click', () => {
     const words = fullTranscript.trim().split(/\s+/).filter(Boolean);
-    if (words.length < 15) { showToast('Keep speaking — not enough transcript yet'); return; }
+    if (words.length < 15) { showToast('Keep speaking, not enough transcript yet'); return; }
     const useAI  = settings.ai_summary === 'true';
     const apiKey = settings.openai_api_key || '';
     if (useAI && apiKey) {
@@ -856,7 +851,7 @@ function bindEvents() {
     } else {
       summaryWordCount = 0;
       updateSermonSummary();
-      showToast('Summary refreshed (local mode — add OpenAI key for AI summary)');
+      showToast('Summary refreshed (local mode, add OpenAI key for AI summary)');
     }
   });
 
