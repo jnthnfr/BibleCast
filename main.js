@@ -109,6 +109,23 @@ let db = null;
 let nextGpuRequestId = 0;
 const pendingGpuRequests = new Map(); // requestId -> resolve fn
 
+// Guarded webContents.send: skips the send if the window is null, has been
+// destroyed, or its renderer process died. Without this, a window closed
+// via the OS chrome (Alt+F4 or X-button) can sit briefly with the JS
+// reference still set but webContents already destroyed, so an in-flight
+// IPC send throws and the calling handler returns an unhandled rejection.
+function safeSend(win, channel, payload) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    win.webContents.send(channel, payload);
+  } catch (_) {
+    // webContents.send can throw "Object has been destroyed" if the
+    // renderer process exited between our isDestroyed() check above and
+    // the call. Swallow; the caller never depended on a return value.
+  }
+}
+
+
 const http  = require('http');
 const https = require('https');
 const os    = require('os');
@@ -194,7 +211,7 @@ function createDisplayWindow() {
     displayWindow = null;
     // Notify the operator panel so it can update its displayWindowOpen flag
     if (operatorWindow && !operatorWindow.isDestroyed()) {
-      operatorWindow.webContents.send('display:window-closed');
+      safeSend(operatorWindow, 'display:window-closed');
     }
   });
 }
@@ -275,7 +292,7 @@ function createHdmiMirrorWindow() {
   hdmiMirrorWindow.on('closed', () => {
     hdmiMirrorWindow = null;
     if (operatorWindow && !operatorWindow.isDestroyed()) {
-      operatorWindow.webContents.send('hdmi-mirror:closed');
+      safeSend(operatorWindow, 'hdmi-mirror:closed');
     }
   });
 }
@@ -292,7 +309,16 @@ function createGpuWorkerWindow() {
     },
   });
   gpuWorkerWindow.loadFile('src/whisper/whisper-gpu.html');
-  gpuWorkerWindow.on('closed', () => { gpuWorkerWindow = null; });
+  gpuWorkerWindow.on('closed', () => {
+    gpuWorkerWindow = null;
+    // If the worker window died (WebGPU init failure, model crash, etc.)
+    // any in-flight transcribe requests are now orphaned. Settle them
+    // with a clear error instead of waiting 30 s for the per-call timeout.
+    for (const [id, resolve] of pendingGpuRequests) {
+      resolve({ ok: false, error: 'GPU worker exited' });
+      pendingGpuRequests.delete(id);
+    }
+  });
 }
 
 function createScraperWindow() {
@@ -425,7 +451,7 @@ function checkFirstRun() {
           data: verses,
         });
         console.log(`[BibleCast] Auto-seeded KJV — ${verses.length} verses`);
-        if (operatorWindow) operatorWindow.webContents.send('translations:ready');
+        safeSend(operatorWindow, 'translations:ready');
       } catch (err) {
         console.error('[BibleCast] KJV auto-seed failed:', err.message);
         // Fall back to showing download prompt
@@ -448,7 +474,7 @@ function showNoTranslationsDialog() {
     defaultId: 0,
   }).then(({ response }) => {
     if (response === 0 && operatorWindow) {
-      operatorWindow.webContents.send('nav:settings');
+      safeSend(operatorWindow, 'nav:settings');
     }
   });
 }
@@ -549,9 +575,9 @@ function registerVerseHandlers() {
       translation: verse.translation || 'KJV',
       visible:     true,
     };
-    if (displayWindow)    displayWindow.webContents.send('display:update', verseMsg);
-    if (ndiWindow)        ndiWindow.webContents.send('display:update', verseMsg);
-    if (hdmiMirrorWindow) hdmiMirrorWindow.webContents.send('display:update', verseMsg);
+    safeSend(displayWindow, 'display:update', verseMsg);
+    safeSend(ndiWindow, 'display:update', verseMsg);
+    safeSend(hdmiMirrorWindow, 'display:update', verseMsg);
 
     // Log to active session
     const sess = getDb().getActiveSession();
@@ -652,9 +678,9 @@ function registerSettingsHandlers() {
         standbyImageFit:     s.standby_image_fit     || 'contain',
         standbyImageOpacity: s.standby_image_opacity || '100',
       };
-      if (displayWindow)    displayWindow.webContents.send('display:update', settingsMsg);
-      if (ndiWindow)        ndiWindow.webContents.send('display:update', settingsMsg);
-      if (hdmiMirrorWindow) hdmiMirrorWindow.webContents.send('display:update', settingsMsg);
+      safeSend(displayWindow, 'display:update', settingsMsg);
+      safeSend(ndiWindow, 'display:update', settingsMsg);
+      safeSend(hdmiMirrorWindow, 'display:update', settingsMsg);
     }
     return { ok: true };
   });
@@ -834,9 +860,9 @@ function registerDisplayHandlers() {
     getDb().updateDisplayState({ is_visible: blank ? 0 : 1 });
 
     const blankMsg = { type: 'blank', visible: !blank };
-    if (displayWindow)    displayWindow.webContents.send('display:update', blankMsg);
-    if (ndiWindow)        ndiWindow.webContents.send('display:update', blankMsg);
-    if (hdmiMirrorWindow) hdmiMirrorWindow.webContents.send('display:update', blankMsg);
+    safeSend(displayWindow, 'display:update', blankMsg);
+    safeSend(ndiWindow, 'display:update', blankMsg);
+    safeSend(hdmiMirrorWindow, 'display:update', blankMsg);
 
     return { ok: true };
   });
@@ -853,12 +879,12 @@ function registerDisplayHandlers() {
     displayWindow.webContents.once('did-finish-load', () => {
       const state = getDb().getDisplayState();
       const s     = getDb().getAllSettings();
-      displayWindow.webContents.send('display:update', buildDisplaySettingsMsg(s, state));
+      safeSend(displayWindow, 'display:update', buildDisplaySettingsMsg(s, state));
       if (s.hdmi_layout) {
-        displayWindow.webContents.send('display:update', { type: 'layout', layout: s.hdmi_layout });
+        safeSend(displayWindow, 'display:update', { type: 'layout', layout: s.hdmi_layout });
       }
       if (state?.current_text && state.is_visible) {
-        displayWindow.webContents.send('display:update', {
+        safeSend(displayWindow, 'display:update', {
           type:        'verse',
           reference:   state.current_reference,
           text:        state.current_text,
@@ -897,12 +923,12 @@ function registerDisplayHandlers() {
         ndiWindow.webContents.once('did-finish-load', () => {
           const state = getDb().getDisplayState();
           const s     = getDb().getAllSettings();
-          ndiWindow.webContents.send('display:update', buildDisplaySettingsMsg(s, state));
+          safeSend(ndiWindow, 'display:update', buildDisplaySettingsMsg(s, state));
           if (s.ndi_layout) {
-            ndiWindow.webContents.send('display:update', { type: 'layout', layout: s.ndi_layout });
+            safeSend(ndiWindow, 'display:update', { type: 'layout', layout: s.ndi_layout });
           }
           if (state?.current_text && state.is_visible) {
-            ndiWindow.webContents.send('display:update', {
+            safeSend(ndiWindow, 'display:update', {
               type:        'verse',
               reference:   state.current_reference,
               text:        state.current_text,
@@ -930,12 +956,12 @@ function registerDisplayHandlers() {
         hdmiMirrorWindow.webContents.once('did-finish-load', () => {
           const state = getDb().getDisplayState();
           const s     = getDb().getAllSettings();
-          hdmiMirrorWindow.webContents.send('display:update', buildDisplaySettingsMsg(s, state));
+          safeSend(hdmiMirrorWindow, 'display:update', buildDisplaySettingsMsg(s, state));
           if (s.hdmi_layout) {
-            hdmiMirrorWindow.webContents.send('display:update', { type: 'layout', layout: s.hdmi_layout });
+            safeSend(hdmiMirrorWindow, 'display:update', { type: 'layout', layout: s.hdmi_layout });
           }
           if (state?.current_text && state.is_visible) {
-            hdmiMirrorWindow.webContents.send('display:update', {
+            safeSend(hdmiMirrorWindow, 'display:update', {
               type:        'verse',
               reference:   state.current_reference,
               text:        state.current_text,
@@ -955,15 +981,15 @@ function registerDisplayHandlers() {
     // Clears HDMI (and mirror) back to standby without closing the window.
     // NDI is intentionally excluded — it stays on the current verse.
     const clearMsg = { type: 'clear' };
-    if (displayWindow)    displayWindow.webContents.send('display:update', clearMsg);
-    if (hdmiMirrorWindow) hdmiMirrorWindow.webContents.send('display:update', clearMsg);
+    safeSend(displayWindow, 'display:update', clearMsg);
+    safeSend(hdmiMirrorWindow, 'display:update', clearMsg);
     return { ok: true };
   });
 
   ipcMain.handle('display:layout', (_event, { target, layout }) => {
     const msg = { type: 'layout', layout };
-    if (target === 'hdmi' && displayWindow) displayWindow.webContents.send('display:update', msg);
-    if (target === 'ndi'  && ndiWindow)     ndiWindow.webContents.send('display:update', msg);
+    if (target === 'hdmi' && displayWindow) safeSend(displayWindow, 'display:update', msg);
+    if (target === 'ndi'  && ndiWindow)     safeSend(ndiWindow, 'display:update', msg);
     getDb().setSetting(target === 'ndi' ? 'ndi_layout' : 'hdmi_layout', layout);
     return { ok: true };
   });
@@ -993,7 +1019,7 @@ function registerWhisperHandlers() {
     }
   });
   ipcMain.on('whisper:gpu:progress', (_e, p) => {
-    operatorWindow?.webContents.send('whisper:progress', p);
+    safeSend(operatorWindow, 'whisper:progress', p);
   });
 
   ipcMain.handle('whisper:set-gpu', (_e, enable) => {
@@ -1017,7 +1043,7 @@ function registerWhisperHandlers() {
       return new Promise(resolve => {
         const requestId = ++nextGpuRequestId;
         pendingGpuRequests.set(requestId, resolve);
-        gpuWorkerWindow.webContents.send('whisper:gpu:transcribe', {
+        safeSend(gpuWorkerWindow, 'whisper:gpu:transcribe', {
           requestId, audioArray, modelId, cacheDir,
         });
         setTimeout(() => {
@@ -1033,7 +1059,7 @@ function registerWhisperHandlers() {
 
     try {
       const pipe    = await getWhisperPipeline(modelId, progress => {
-        operatorWindow?.webContents.send('whisper:progress', progress);
+        safeSend(operatorWindow, 'whisper:progress', progress);
       });
       const float32 = new Float32Array(audioArray);
       const result  = await pipe(float32, { language: 'english', task: 'transcribe' });
@@ -1045,7 +1071,7 @@ function registerWhisperHandlers() {
 
   ipcMain.handle('whisper:reset', () => {
     whisperPipeline = null;
-    if (gpuWorkerWindow) gpuWorkerWindow.webContents.send('whisper:gpu:reset');
+    safeSend(gpuWorkerWindow, 'whisper:gpu:reset');
     return { ok: true };
   });
 
@@ -1137,7 +1163,7 @@ function registerUpdateHandlers() {
 
   function sendUpdateMsg(event, payload) {
     if (operatorWindow && !operatorWindow.isDestroyed()) {
-      operatorWindow.webContents.send('updater:event', { event, ...payload });
+      safeSend(operatorWindow, 'updater:event', { event, ...payload });
     }
   }
 
@@ -1263,7 +1289,7 @@ function registerScraperHandlers() {
               const msg = JSON.parse(trimmed);
 
               if (scraperWindow && !scraperWindow.isDestroyed()) {
-                scraperWindow.webContents.send('scraper:progress', { abbr, ...msg });
+                safeSend(scraperWindow, 'scraper:progress', { abbr, ...msg });
               }
 
               if (msg.type === 'done') finalVerses = msg.verses;
@@ -1286,7 +1312,7 @@ function registerScraperHandlers() {
     setImmediate(async () => {
       for (const abbr of abbrs) {
         if (scraperWindow && !scraperWindow.isDestroyed()) {
-          scraperWindow.webContents.send('scraper:progress', { abbr, type: 'starting' });
+          safeSend(scraperWindow, 'scraper:progress', { abbr, type: 'starting' });
         }
 
         const result = await scrapeOne(abbr);
@@ -1299,7 +1325,7 @@ function registerScraperHandlers() {
             // a "persisting" message instead of an apparent freeze for
             // 1-2 seconds while the multi-MB blob is serialized.
             if (scraperWindow && !scraperWindow.isDestroyed()) {
-              scraperWindow.webContents.send('scraper:progress', {
+              safeSend(scraperWindow, 'scraper:progress', {
                 abbr, type: 'persisting', count: result.verses.length, name,
               });
             }
@@ -1310,23 +1336,23 @@ function registerScraperHandlers() {
               data: result.verses,
             });
             if (scraperWindow && !scraperWindow.isDestroyed()) {
-              scraperWindow.webContents.send('scraper:progress', {
+              safeSend(scraperWindow, 'scraper:progress', {
                 abbr, type: 'imported', count: result.verses.length, name,
               });
             }
             if (operatorWindow && !operatorWindow.isDestroyed()) {
-              operatorWindow.webContents.send('translations:ready');
+              safeSend(operatorWindow, 'translations:ready');
             }
           } catch (err) {
             if (scraperWindow && !scraperWindow.isDestroyed()) {
-              scraperWindow.webContents.send('scraper:progress', {
+              safeSend(scraperWindow, 'scraper:progress', {
                 abbr, type: 'error', msg: 'DB import failed: ' + err.message,
               });
             }
           }
         } else if (!result.ok) {
           if (scraperWindow && !scraperWindow.isDestroyed()) {
-            scraperWindow.webContents.send('scraper:progress', {
+            safeSend(scraperWindow, 'scraper:progress', {
               abbr, type: 'error', msg: result.error || 'Scrape failed or returned 0 verses',
             });
           }
@@ -1334,7 +1360,7 @@ function registerScraperHandlers() {
       }
 
       if (scraperWindow && !scraperWindow.isDestroyed()) {
-        scraperWindow.webContents.send('scraper:progress', { type: 'queue-done' });
+        safeSend(scraperWindow, 'scraper:progress', { type: 'queue-done' });
       }
     });
 
