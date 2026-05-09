@@ -47,4 +47,5 @@ let settings = {
   show_translation:       true,
   show_reference:         true,
   whisper_provider:       'web-speech',
+  auto_project_only_on_exact_ref: true,  // strict mode: auto-project only on path-1 reference matches
 };

@@ -112,11 +112,13 @@ function schedulePrediction(text) {
 async function runPrediction(text) {
   const translation = document.getElementById('translation-select')?.value || 'KJV';
   let results = [];
+  let resultSource = null; // 'ref' (path 1) or 'keyword' (path 2)
 
   // Try direct reference match first (e.g. "John 3:16" spoken aloud)
   const ref = detectScriptureRef(text);
   if (ref) {
     results = await api.searchVerses(ref, translation);
+    if (results.length) resultSource = 'ref';
   }
 
   // Fall back to keyword search if no reference found or no results
@@ -124,6 +126,7 @@ async function runPrediction(text) {
     const keywords = extractKeywords(text);
     if (keywords.length < getConfidenceThreshold()) return;
     results = await api.searchVerses(keywords.slice(0, 4).join(' '), translation);
+    if (results.length) resultSource = 'keyword';
   }
 
   showPredictions(results.slice(0, 5));
@@ -132,6 +135,15 @@ async function runPrediction(text) {
   if (settings.auto_project === true || settings.auto_project === 'true') {
     const requireSession = settings.require_session !== 'false';
     if (requireSession && !activeSession) return;
+
+    // Strict mode (default on): auto-project only when path 1 matched, that
+    // is, the speaker actually said an explicit reference. Keyword-fallback
+    // hits still populate the predictions list so the operator can click
+    // them manually, but they do not fire pushVerse on their own. This
+    // prevents false projections triggered by verbatim quoting of verse
+    // wording without a spoken reference.
+    const strict = settings.auto_project_only_on_exact_ref !== 'false';
+    if (strict && resultSource !== 'ref') return;
 
     const now      = Date.now();
     const cooldown = parseInt(settings.proj_debounce || 5, 10) * 1000;

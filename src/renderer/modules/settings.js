@@ -212,6 +212,7 @@ async function loadSettingsView() {
   setCheckbox('setting-auto-project',    s.auto_project === 'true');
   setSelectVal('setting-confidence',     s.confidence);
   setCheckbox('setting-require-session', s.require_session !== 'false');
+  setCheckbox('setting-strict-auto-project', s.auto_project_only_on_exact_ref !== 'false');
   setSlider('setting-proj-debounce', 'setting-proj-debounce-val', s.proj_debounce || '5',    v => v+'s');
   // Display
   setSelectVal('settings-theme',       s.theme);
@@ -282,6 +283,7 @@ async function saveAllSettings() {
     ['auto_project',            getCheckbox('setting-auto-project')],
     ['confidence',              getSelectVal('setting-confidence')],
     ['require_session',         getCheckbox('setting-require-session')],
+    ['auto_project_only_on_exact_ref', getCheckbox('setting-strict-auto-project')],
     ['proj_debounce',           getSliderVal('setting-proj-debounce')],
     ['theme',                   theme || 'dark'],
     ['font_size',               fontSize || '64'],
@@ -376,7 +378,8 @@ async function resetDefaults() {
   const defaults = {
     theme: 'dark', font_size: '64', show_translation: 'true', show_reference: 'true',
     standby_bg_type: 'solid', auto_project: 'false', confidence: 'medium',
-    require_session: 'true', debounce_ms: '1500', proj_debounce: '5',
+    require_session: 'true', auto_project_only_on_exact_ref: 'true',
+    debounce_ms: '1500', proj_debounce: '5',
     autostart_transcription: 'false', speech_quality: 'balanced',
     default_session_name: 'Sunday Morning Service', auto_session: 'false',
     clear_transcript: 'false', show_shortcuts: 'false', voice_cmds: 'false',
