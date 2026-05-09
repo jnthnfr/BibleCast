@@ -4,6 +4,67 @@ All notable changes to BibleCast are documented here.
 
 ---
 
+## [1.4.4] — 2026-05-07
+
+Stability release covering issues found during a v1.4.3 field test plus a
+codebase-wide audit. No new features; the focus is on lifecycle correctness.
+
+### Fixed: false auto-projections from verbatim quoting
+
+- **Strict auto-project mode** (default on). Auto-project now only fires when the speaker actually says an explicit reference (e.g. "John three sixteen"). Verses that match by keyword overlap still appear in the predictions list but no longer project on their own. Toggle in Settings → Scripture Detection → "Only auto-project on explicit references".
+
+### Fixed: app freeze on engine or translation change mid-session
+
+- **Transcription engine swap.** Changing the speech engine while listening previously left the original engine running (mic held, audio graph live, Web Speech `onend` auto-restart conflicting with the new engine). All four engines are now stopped via a single `stopActiveTranscription` helper, and the Settings change handler stops the running engine and asks the operator to click Start again.
+- **Translation swap.** Changing the active translation could stall the operator panel for 1-3 seconds the first time the new translation was used, while the main process synchronously parsed the multi-MB JSON blob. The renderer now pre-warms the verse cache via a new `translations:warm` IPC when the dropdown changes, so the freeze lands on the deliberate click instead of the next mid-sermon auto-projection.
+
+### Fixed: Electron lifecycle and resource leaks
+
+- **`webContents.send` to destroyed windows.** All 39 IPC sends in `main.js` now route through a `safeSend(win, channel, payload)` helper that checks `isDestroyed()` and try/catches the underlying call, so a window closed via the OS chrome no longer surfaces unhandled rejections in the renderer.
+- **GPU worker exit drain.** When `gpuWorkerWindow` exits (WebGPU init failure, model crash), in-flight `pendingGpuRequests` are now settled immediately with a clear error instead of waiting 30 seconds for the per-call timeout.
+- **Display toggle race.** A re-entrancy lock on `display:open` prevents a second click during the ~100-300 ms init window from destroying a half-loaded display.
+- **Web Speech `onend` cross-engine auto-restart.** The guard tightened from "not whisper-local" to "is web-speech": the previous wording let Web Speech auto-restart while Vosk was the active provider.
+- **Web Speech persistent-error path.** Now drains all engines via `stopActiveTranscription`; previously left the recognition object alive and its `onend` handler kept retrying.
+- **Whisper flush re-entrancy.** A single transcribe taking longer than the 3 s flush interval used to queue parallel in-flight calls. Now gated by an `_whisperFlushing` flag.
+- **`startWhisperCapture` partial-init.** Partial state from a failed init (mic acquired but AudioContext threw) is now cleaned up via `stopWhisperCapture`.
+
+### Changed: verse cache is now bounded
+
+- **Bounded LRU.** Capacity 4 entries; on miss-when-full the least-recently-used translation is evicted. The cached array is `Object.freeze`'d so callers can't accidentally mutate it.
+- **Translation persistence progress.** The Bible Gateway scraper popup now shows a "persisting" status during the synchronous `JSON.stringify` + `INSERT` that finalizes a scraped translation, instead of appearing to freeze for 1-2 seconds at the end.
+
+### Internal
+
+The operator-panel renderer was split from a 2925-line monolith into 14 focused modules under `src/renderer/modules/`:
+
+- `state`, `utils-renderer`, `bible-data`, `bible-browser`, `sessions`, `voice-commands`, `summary`, `transcription`, `search`, `projection-preview`, `display-output`, `settings`, `translations`, `updater`
+
+Modules load as classic `<script>` tags in `index.html`; top-level declarations live in a single shared script-level lexical environment, so cross-module references resolve by name without imports. `renderer.js` is now a 901-line orchestrator carrying `init`, `bindEvents`, the bootstrap helpers, and the `DOMContentLoaded` entry point. The full module map is in `BibleCast/src/renderer/renderer.js` at the top of the file.
+
+This release also includes the 7 audit fixes (B1, B2, B4, B6, B9, B10, B11) shipped earlier on `main`:
+
+- B1 — added missing `vosk:read-model` IPC handler (Vosk picker hung indefinitely without it)
+- B2 — `addTranslation` upserts via `ON CONFLICT(abbreviation) DO UPDATE` so the row id is stable across re-imports
+- B4 — `escapeHtml` unified across browser and node, null-guarded, apostrophe escaped
+- B6 — `throttle` rewritten to standard leading + trailing pattern (was leaking trailing timers)
+- B9 — Chrome bridge HTTP listener now closes on `chrome:stop-bridge`
+- B10 — `before-quit` handler consolidated (was registered in two places)
+- B11 — Whisper GPU results routed by per-call `requestId` to prevent cross-call mis-routing
+
+---
+
+## [1.4.3] — 2026-05-03
+
+### Added
+- NDI mirroring across panels
+- Resizable layout panels (transcript panel, Bible browser)
+- Following-verses toggle in settings
+
+### Fixed
+- Bible Gateway scraper layout misalignment in Settings page
+
+---
+
 ## [1.4.2] — 2026-04-20
 
 ### Fixed
