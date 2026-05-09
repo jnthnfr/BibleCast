@@ -76,16 +76,19 @@ function initSpeechRecognition() {
     recognition.onerror = e => {
       if (e.error === 'no-speech' || e.error === 'aborted') return;
       console.warn('[WebSpeech] Error:', e.error);
-      // Persistent errors: reset state and inform the user visibly
+      // Persistent errors: stop the engine cleanly and inform the user.
       const PERSISTENT = ['not-allowed', 'audio-capture', 'service-not-allowed', 'network'];
       if (PERSISTENT.includes(e.error)) {
         isListening = false;
+        // Drain every engine, not just recognition.stop(). The auto-switch
+        // below changes the cached provider; without a full stop, the
+        // recognition object's onend handler keeps trying to restart.
+        stopActiveTranscription();
         const btn = document.getElementById('listen-btn');
         if (btn) {
           btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg> Start Listening`;
           btn.classList.remove('active');
         }
-        setWhisperBadge('');
         const el = document.getElementById('transcript-text');
         if (!el) return;
         // Network/service errors: auto-switch to Whisper AI silently
@@ -102,10 +105,16 @@ function initSpeechRecognition() {
     };
 
     recognition.onend = () => {
-      // Delay restart so onerror (which fires before onend) has time to set isListening=false
-      if (isListening && settings.whisper_provider !== 'whisper-local') {
+      // Delay restart so onerror (which fires before onend) has time to
+      // set isListening=false. The provider check is intentionally
+      // strict-equality to 'web-speech': if the operator switched mid-
+      // session to Vosk or Whisper, this handler is still attached but
+      // must not auto-restart Web Speech alongside the new engine.
+      if (isListening && settings.whisper_provider === 'web-speech') {
         setTimeout(() => {
-          if (isListening) try { recognition.lang = 'en-US'; recognition.start(); } catch (_) {}
+          if (isListening && settings.whisper_provider === 'web-speech') {
+            try { recognition.lang = 'en-US'; recognition.start(); } catch (_) {}
+          }
         }, 300);
       }
     };
@@ -135,6 +144,23 @@ function initSpeechRecognition() {
   });
 }
 
+// Stop every transcription engine, regardless of which one is currently
+// running. Each engine-specific stop guards its own state, so calling
+// it for an engine that was never started is a no-op. Used by the
+// off-branch of toggleListening, by the network-error auto-switch, and
+// by the renderer's setting-whisper-provider change handler so a
+// mid-session provider swap can't leak the previous engine's mic and
+// audio graph.
+function stopActiveTranscription() {
+  if (recognition) {
+    try { recognition.stop(); } catch (_) {}
+  }
+  stopChromeBridgeCapture();
+  stopWhisperCapture();
+  stopVoskCapture();
+  setWhisperBadge('');
+}
+
 function toggleListening() {
   isListening = !isListening;
   const btn = document.getElementById('listen-btn');
@@ -153,16 +179,13 @@ function toggleListening() {
     btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg> Stop Listening`;
     btn.classList.add('active');
   } else {
-    if (settings.whisper_provider === 'whisper-local') {
-      stopWhisperCapture();
-    } else if (settings.whisper_provider === 'vosk') {
-      stopVoskCapture();
-    } else if (settings.whisper_provider === 'web-speech') {
-      stopChromeBridgeCapture();
-    }
+    // Stop every engine, not just the one matching the current provider:
+    // the provider may have changed mid-session, in which case the original
+    // engine is still running and selecting its stop function by name would
+    // miss it.
+    stopActiveTranscription();
     btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg> Start Listening`;
     btn.classList.remove('active');
-    setWhisperBadge('');
   }
 }
 
@@ -246,6 +269,10 @@ async function startWhisperCapture() {
   } catch (err) {
     console.error('[Whisper] Mic access failed:', err.message);
     isListening = false;
+    // Clean up any partial state from a failed init: getUserMedia may have
+    // succeeded before AudioContext or ScriptProcessor threw. stopWhisperCapture
+    // guards each field individually so it's safe to call from any partial state.
+    stopWhisperCapture();
     const btn = document.getElementById('listen-btn');
     if (btn) {
       btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg> Start Listening`;
@@ -377,8 +404,18 @@ function stopVoskCapture() {
   setWhisperBadge('');
 }
 
+// Re-entrancy guard: setInterval doesn't await, so if a single transcribe
+// call takes longer than the 3 s flush interval (common during pipeline load
+// or on a slow CPU), multiple flushes pile up in flight. Each holds a
+// Float32Array chunk in memory until its IPC settles. With this gate, when
+// a flush is already in progress we skip the new tick rather than queuing.
+let _whisperFlushing = false;
+
 async function flushWhisperBuffer() {
+  if (_whisperFlushing) return;
   if (whisperBuffer.length < 8000) return; // need at least 0.5s of audio at 16 kHz
+  _whisperFlushing = true;
+
   const chunk = new Float32Array(whisperBuffer.splice(0, whisperBuffer.length));
   const modelId = settings.whisper_model || 'Xenova/whisper-base.en';
 
@@ -393,6 +430,8 @@ async function flushWhisperBuffer() {
     }
   } catch (e) {
     console.warn('[Whisper] Transcription error:', e.message);
+  } finally {
+    _whisperFlushing = false;
   }
   if (isListening) setWhisperBadge('Recording', 'recording');
 }

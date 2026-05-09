@@ -855,13 +855,28 @@ function bindEvents() {
     }
   });
 
-  // Whisper provider change: show/hide model row + reset cached pipeline
+  // Whisper provider change: show/hide model row + reset cached pipeline.
+  // If the operator changes provider mid-session while the engine is running,
+  // stop everything cleanly and require an explicit Start Listening click
+  // with the new engine. Without this, the previous engine keeps holding
+  // the mic and the new one starts on top, causing the freeze pattern from
+  // the v1.4.3 field test.
   document.getElementById('setting-whisper-provider')?.addEventListener('change', e => {
     const modelRow = document.getElementById('whisper-model-row');
     if (modelRow) modelRow.style.display = e.target.value === 'whisper-local' ? 'flex' : 'none';
     // Reset the cached pipeline so it reloads with the right model next time
     api.resetWhisper?.();
     whisperReady = false;
+    if (isListening) {
+      stopActiveTranscription();
+      isListening = false;
+      const btn = document.getElementById('listen-btn');
+      if (btn) {
+        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg> Start Listening`;
+        btn.classList.remove('active');
+      }
+      showToast('Provider changed, click Start Listening to use the new engine');
+    }
   });
 
   // AI summary toggle: show/hide API key row
