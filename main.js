@@ -101,6 +101,13 @@ let scraperWindow     = null;
 let activeScrapeProc  = null;
 let db = null;
 
+// Re-entrancy lock for display:open's toggle. createDisplayWindow returns
+// synchronously but did-finish-load and the initial display:update IPCs
+// take ~100-300 ms. A second click landing in that window would destroy a
+// half-loaded display, leaving the operator panel in an inconsistent state.
+// While true, display:open is a no-op that reports the current state.
+let displayWindowOpening = false;
+
 // Whisper GPU dispatch: each transcribe call gets a unique requestId so the
 // worker's reply can be routed back to the right caller. A single shared
 // resolve was fragile: rapid back-to-back calls would overwrite the previous
@@ -870,13 +877,21 @@ function registerDisplayHandlers() {
   ipcMain.handle('display:state', () => getDb().getDisplayState());
 
   ipcMain.handle('display:open', () => {
+    // Ignore re-entry while a previous open is still loading. The renderer
+    // sees the current "opening" state as still-open (open: true) so its
+    // displayWindowOpen flag stays consistent.
+    if (displayWindowOpening) {
+      return { ok: false, open: true, busy: true };
+    }
     if (displayWindow) {
       displayWindow.destroy();
       displayWindow = null;
       return { ok: false, open: false };
     }
+    displayWindowOpening = true;
     createDisplayWindow();
     displayWindow.webContents.once('did-finish-load', () => {
+      displayWindowOpening = false;
       const state = getDb().getDisplayState();
       const s     = getDb().getAllSettings();
       safeSend(displayWindow, 'display:update', buildDisplaySettingsMsg(s, state));
@@ -893,6 +908,10 @@ function registerDisplayHandlers() {
         });
       }
     });
+    // Safety net: if did-finish-load never fires (crash, unsupported HTML, etc.)
+    // clear the lock after a generous timeout so the operator isn't permanently
+    // locked out of toggling the display.
+    setTimeout(() => { displayWindowOpening = false; }, 5000);
     return { ok: true, open: true };
   });
 
