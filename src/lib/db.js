@@ -112,16 +112,36 @@ function getSessionVerses(sessionId) {
 
 // --- Verse search ---
 
-// In-memory cache — avoids re-parsing multi-MB JSON on every search call
+// In-memory cache, avoids re-parsing multi-MB JSON on every search call.
+// Bounded LRU: each translation parses to a multi-MB JS object, and an
+// unbounded cache would hold every translation the user has visited
+// since launch. Map iteration order is insertion order, so on a miss
+// when at capacity we evict the oldest key (the one least recently
+// touched), matching standard LRU semantics. The cached array is
+// shallow-frozen so callers can't accidentally push/sort/splice it
+// and corrupt subsequent reads. (Deep-freezing the verse objects
+// would break the verse:navigate IPC handler in main.js, which sets
+// .reference and .translation on the cached verse for its response.)
 const verseCache = new Map();
+const MAX_CACHED_TRANSLATIONS = 4;
 
 function getTranslationVerses(abbreviation) {
   const key = abbreviation.toUpperCase();
-  if (verseCache.has(key)) return verseCache.get(key);
+  if (verseCache.has(key)) {
+    // LRU touch: re-insert at the tail so it's last to evict.
+    const cached = verseCache.get(key);
+    verseCache.delete(key);
+    verseCache.set(key, cached);
+    return cached;
+  }
   const trans = getDb().prepare('SELECT data FROM translations WHERE abbreviation = ?').get(abbreviation);
   if (!trans) return null;
   try {
-    const verses = JSON.parse(trans.data);
+    const verses = Object.freeze(JSON.parse(trans.data));
+    if (verseCache.size >= MAX_CACHED_TRANSLATIONS) {
+      const oldest = verseCache.keys().next().value;
+      verseCache.delete(oldest);
+    }
     verseCache.set(key, verses);
     return verses;
   } catch {

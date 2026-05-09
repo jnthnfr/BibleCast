@@ -663,6 +663,16 @@ function registerSettingsHandlers() {
 function registerTranslationHandlers() {
   ipcMain.handle('translations:list', () => getDb().listTranslations());
 
+  // Pre-warm the verse cache for an abbreviation. Pays the JSON.parse cost
+  // up front when the operator changes the active translation, so the next
+  // verse:search / verse:navigate / verse:following IPC isn't the one that
+  // blocks the main process for 1-3 seconds on a multi-MB parse. Returns
+  // ok=true if the translation is now cached, ok=false if it isn't installed.
+  ipcMain.handle('translations:warm', (_event, abbr) => {
+    const verses = getDb().getTranslationVerses(abbr);
+    return { ok: !!verses };
+  });
+
   ipcMain.handle('translations:available', () => [
     { abbr: 'kjv',     name: 'King James Version (1611)',          language: 'English'    },
     { abbr: 'asv',     name: 'American Standard Version (1901)',   language: 'English'    },
@@ -1284,6 +1294,15 @@ function registerScraperHandlers() {
         if (result.ok && result.verses && result.verses.length > 0) {
           const name = TRANSLATION_NAMES[abbr.toUpperCase()] || abbr.toUpperCase() + ' Bible';
           try {
+            // Tell the scraper window we're about to persist before the
+            // synchronous JSON.stringify + INSERT block, so the user sees
+            // a "persisting" message instead of an apparent freeze for
+            // 1-2 seconds while the multi-MB blob is serialized.
+            if (scraperWindow && !scraperWindow.isDestroyed()) {
+              scraperWindow.webContents.send('scraper:progress', {
+                abbr, type: 'persisting', count: result.verses.length, name,
+              });
+            }
             getDb().addTranslation({
               name,
               abbreviation: abbr.toUpperCase(),

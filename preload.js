@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld('biblecast', {
   listTranslations: () =>
     ipcRenderer.invoke('translations:list'),
 
+  warmTranslation: (abbr) =>
+    ipcRenderer.invoke('translations:warm', abbr),
+
   listAvailableTranslations: () =>
     ipcRenderer.invoke('translations:available'),
 

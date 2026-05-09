@@ -513,7 +513,15 @@ function bindEvents() {
       doSearch(true);
     }
   });
-  document.getElementById('translation-select')?.addEventListener('change', doSearch);
+  document.getElementById('translation-select')?.addEventListener('change', e => {
+    // Pre-warm the verse cache in main process so the first auto-projection
+    // or verse:navigate after the change isn't the one that pays the
+    // JSON.parse cost (1-3s for multi-MB translations, blocking the main
+    // process and visibly freezing the operator panel mid-sermon).
+    const abbr = e.target.value;
+    if (abbr) api.warmTranslation?.(abbr).catch(() => {});
+    doSearch();
+  });
   document.getElementById('find-btn')?.addEventListener('click', doSearch);
 
   // Display controls: Studio Preview (primary) + Display Preview view
