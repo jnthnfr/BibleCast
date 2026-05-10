@@ -40,6 +40,100 @@ let voskAudioCtx       = null;
 let voskProcessor      = null;
 let voskStream         = null;
 
+// ── English-only gate ─────────────────────────────────────────────────────────
+//
+// Field-test finding: when the preacher code-switches into a local language,
+// the English-only Whisper checkpoint (and Web Speech with lang=en-US) emits
+// either obvious hallucinations ("Thank you.", "Thanks for watching.") or
+// random English-flavoured noise that pollutes the transcript and triggers
+// false predictions. Until we ship multilingual support, the safer behaviour
+// is to drop those chunks and wait for English to resume.
+//
+// looksLikeEnglish() is a deliberately lenient heuristic: it only returns
+// false when at least one clear non-English signal fires. Short, valid
+// English ("Amen.", "Glory.", "Praise God.") passes through.
+const _EN_HALLUCINATIONS = new Set([
+  'thank you.', 'thank you', 'thanks.', 'thanks',
+  'thanks for watching.', 'thanks for watching',
+  'thank you for watching.', 'thank you for watching',
+  'please subscribe.', 'please subscribe', 'subscribe.', 'subscribe',
+  'like and subscribe.', 'like and subscribe',
+  'you', 'you.', 'okay.', 'okay', 'ok.', 'ok',
+  'bye.', 'bye', 'bye-bye.', 'bye bye',
+  '[music]', '[applause]', '[laughter]',
+]);
+const _EN_STOPWORDS = new Set([
+  'the','and','of','to','in','a','is','that','for','it','was','on','with',
+  'as','at','by','this','his','her','him','she','he','they','we','you','i',
+  'are','have','has','be','been','but','not','or','if','from','an','my',
+  'your','our','their','will','would','can','do','does','did','said','so',
+  'when','what','who','how','why','where','there','here','then','than',
+  'one','two','three','god','jesus','lord','christ','spirit','holy','father',
+  'son','heaven','earth','word','life','love','faith','grace','sin','soul',
+  'shall','let','us','unto','saith','thee','thou','thy','ye','behold','amen',
+]);
+let _droppedNonEnglishCount = 0;
+
+function looksLikeEnglish(text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return false;
+
+  // 1. Non-Latin scripts (CJK, Arabic, Devanagari, Cyrillic, etc.). Allow
+  // basic Latin + Latin-1 + Latin Extended; drop if more than 15% of
+  // letters fall outside that band.
+  const letters = trimmed.replace(/[^\p{L}]/gu, '');
+  if (letters.length) {
+    let nonLatin = 0;
+    for (const ch of letters) {
+      if (ch.codePointAt(0) > 0x024F) nonLatin++;
+    }
+    if (nonLatin / letters.length > 0.15) return false;
+  }
+
+  // 2. Pure-punctuation or music-symbol output, plus the well-known Whisper
+  // hallucination set when fed non-English audio. Strip trailing punctuation
+  // so "Thanks for watching!" matches "thanks for watching".
+  if (/^[\s♪♫.,!?\-…]+$/.test(trimmed)) return false;
+  const lower = trimmed.toLowerCase();
+  const stripped = lower.replace(/[\s.,!?…\-]+$/, '');
+  if (_EN_HALLUCINATIONS.has(lower) || _EN_HALLUCINATIONS.has(stripped)) return false;
+
+  // 3. Repetition spiral: one token dominating a multi-token chunk is the
+  // engine locking into garbage on unfamiliar audio.
+  const tokens = lower.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 4) {
+    const counts = {};
+    for (const t of tokens) counts[t] = (counts[t] || 0) + 1;
+    const top = Math.max(...Object.values(counts));
+    if (top / tokens.length > 0.7) return false;
+  }
+
+  // 4. English-stopword density. Judge chunks of 4+ alphabetic tokens; short
+  // chunks of valid English usually contain at least one common function or
+  // theological word from the stopword set. The set is intentionally
+  // sermon-flavoured (god, jesus, lord, faith, amen, …) so that short
+  // worship phrases like "Father Son Holy Spirit" pass.
+  const alphaTokens = tokens.filter(t => /^[a-z']+$/.test(t));
+  if (alphaTokens.length >= 4) {
+    const hits = alphaTokens.filter(t => _EN_STOPWORDS.has(t)).length;
+    if (hits === 0) return false;
+  }
+
+  return true;
+}
+
+// Brief operator feedback when a chunk is skipped. Uses the existing whisper
+// status badge so we don't add yet another DOM element.
+function flashSkippedBadge() {
+  _droppedNonEnglishCount++;
+  setWhisperBadge('Skipped: non-English', 'processing');
+  clearTimeout(flashSkippedBadge._t);
+  flashSkippedBadge._t = setTimeout(() => {
+    if (isListening) setWhisperBadge('● Active', 'ai');
+    else setWhisperBadge('');
+  }, 1200);
+}
+
 // ── Speech recognition: provider-aware ────────────────────────────────────────
 
 function initSpeechRecognition() {
@@ -63,6 +157,13 @@ function initSpeechRecognition() {
         if (res.isFinal) {
           const conf = res[0].confidence;
           if (conf > 0 && conf < 0.15) continue;
+          // English-only gate: Web Speech is pinned to lang=en-US, so when
+          // the speaker code-switches it returns low-confidence English-ish
+          // garbage. Drop chunks that don't look like English.
+          if (!looksLikeEnglish(t)) {
+            flashSkippedBadge();
+            continue;
+          }
           finalDelta += t + ' ';
           appendToTranscript(t + ' ');
           onNewFinalText(finalDelta.trim());
@@ -197,6 +298,11 @@ function startChromeBridgeCapture() {
     // Data from Chrome: { interim: string, final: string }
     api.onChromeSpeechResult((data) => {
       if (data.final) {
+        // English-only gate (see looksLikeEnglish for rationale).
+        if (!looksLikeEnglish(data.final)) {
+          flashSkippedBadge();
+          return;
+        }
         appendToTranscript((fullTranscript ? ' ' : '') + data.final);
         updateTranscriptDisplay('');
         onNewFinalText(data.final);
@@ -354,11 +460,15 @@ async function startVoskCapture() {
 
     voskRec.on('result', msg => {
       const text = (msg.result?.text || '').trim();
-      if (text) {
-        appendToTranscript((fullTranscript ? ' ' : '') + text);
-        updateTranscriptDisplay('');
-        onNewFinalText(text);
+      if (!text) return;
+      // English-only gate (see looksLikeEnglish for rationale).
+      if (!looksLikeEnglish(text)) {
+        flashSkippedBadge();
+        return;
       }
+      appendToTranscript((fullTranscript ? ' ' : '') + text);
+      updateTranscriptDisplay('');
+      onNewFinalText(text);
     });
 
     voskRec.on('partialresult', msg => {
@@ -424,9 +534,16 @@ async function flushWhisperBuffer() {
     const result = await api.transcribeAudio(Array.from(chunk), modelId);
     if (result.ok && result.text.trim()) {
       const text = result.text.trim();
-      appendToTranscript(text + ' ');
-      updateTranscriptDisplay('');
-      onNewFinalText(text);
+      // English-only gate: whisper-base.en hallucinates "Thank you.",
+      // "Thanks for watching.", or repetition spirals on non-English audio.
+      // Drop those so the transcript stays clean.
+      if (!looksLikeEnglish(text)) {
+        flashSkippedBadge();
+      } else {
+        appendToTranscript(text + ' ');
+        updateTranscriptDisplay('');
+        onNewFinalText(text);
+      }
     }
   } catch (e) {
     console.warn('[Whisper] Transcription error:', e.message);
@@ -452,13 +569,73 @@ function onNewFinalText(text) {
   schedulePrediction(text);
 }
 
+// Cache the last rendered HTML so re-render on every interim tick doesn't
+// thrash the DOM (and break a hover/focus on a freshly-rendered ref chip).
+let _lastTranscriptHtml = '';
+
+// Wire delegated click + dblclick handlers on the live transcript so any
+// inline scripture-ref chip is interactive. Plain click queues the verse to
+// Studio Preview; shift-click or dblclick projects it. Bound once on init —
+// repeated innerHTML rewrites in updateTranscriptDisplay don't detach the
+// listener, since it lives on the parent element.
+function initTranscriptClickHandlers() {
+  const el = document.getElementById('transcript-text');
+  if (!el || el.dataset.refClickBound === '1') return;
+  el.dataset.refClickBound = '1';
+
+  const handle = async (refStr, project) => {
+    const translation = document.getElementById('translation-select')?.value || 'KJV';
+    let results = [];
+    try {
+      results = await api.searchVerses(refStr, translation);
+    } catch (err) {
+      console.warn('[transcript] verse lookup failed:', err.message);
+    }
+    if (!results || !results.length) {
+      showToast(`No verse found for "${refStr}"`);
+      return;
+    }
+    selectVerse(results[0], null);
+    if (project) {
+      await pushVerse();
+      showToast(`Projecting ${results[0].reference || refStr}`);
+    } else {
+      showToast(`Queued ${results[0].reference || refStr}`);
+    }
+  };
+
+  el.addEventListener('click', (e) => {
+    const a = e.target.closest('.scripture-ref');
+    if (!a) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const ref = a.dataset.ref;
+    if (!ref) return;
+    handle(ref, e.shiftKey === true);
+  });
+
+  el.addEventListener('dblclick', (e) => {
+    const a = e.target.closest('.scripture-ref');
+    if (!a) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const ref = a.dataset.ref;
+    if (!ref) return;
+    handle(ref, true);
+  });
+}
+
 function updateTranscriptDisplay(interim) {
   const el = document.getElementById('transcript-text');
   if (!el) return;
   // Show last ~600 chars of final transcript + italic interim
   const recent = fullTranscript.slice(-600);
-  el.innerHTML =
-    escapeHtml(recent) +
-    (interim ? `<span style="color:#484f58;font-style:italic"> ${escapeHtml(interim)}</span>` : '');
+  const html =
+    highlightScriptureRefs(recent) +
+    (interim ? `<span style="color:#484f58;font-style:italic"> ${highlightScriptureRefs(interim)}</span>` : '');
+  if (html !== _lastTranscriptHtml) {
+    el.innerHTML = html;
+    _lastTranscriptHtml = html;
+  }
   el.scrollTop = el.scrollHeight;
 }
