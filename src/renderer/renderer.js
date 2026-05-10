@@ -92,6 +92,7 @@ async function init() {
   initBibleBrowser();
   bindEvents();
   initSpeechRecognition();
+  initTranscriptClickHandlers();
   initUpdaterEvents();
   await loadMicrophones();
   await loadMonitors();

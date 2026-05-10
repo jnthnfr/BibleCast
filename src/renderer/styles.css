@@ -432,6 +432,24 @@ html, body {
   word-break: break-word;
 }
 
+/* Inline scripture-reference chips inside the live transcript. Click queues
+ * to Studio Preview, shift-click or double-click projects. */
+.transcript-text .scripture-ref {
+  color: var(--accent, #f0b400);
+  background: rgba(240, 180, 0, 0.10);
+  border-bottom: 1px dashed currentColor;
+  padding: 0 2px;
+  border-radius: 2px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.transcript-text .scripture-ref:hover {
+  background: rgba(240, 180, 0, 0.22);
+}
+.transcript-text .scripture-ref:active {
+  background: rgba(240, 180, 0, 0.35);
+}
+
 .summary-text {
   font-size: 0.78rem;
   color: var(--text-muted);

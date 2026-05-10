@@ -81,6 +81,49 @@ const BIBLE_BOOKS = [
 // e.g. "John 3:16", "John 3 16", "First Corinthians 13 4"
 const SCRIPTURE_REF_RE = /\b(?:(?:first|second|third|1st|2nd|3rd|1|2|3)\s+)?(?:genesis|gen|exodus|exod?|leviticus|lev|numbers|num|deuteronomy|deut|joshua|josh|judges|judg|ruth|(?:first|second|1st?|2nd?)\s*samuel|samuel|sam|(?:first|second|1st?|2nd?)\s*kings|kings|(?:first|second|1st?|2nd?)\s*chronicles|chronicles|chron|ezra|nehemiah|neh|esther|est|job|psalms?|ps|proverbs?|prov|ecclesiastes|eccl|song(?:\s*of\s*solomon)?|isaiah|isa|jeremiah|jer|lamentations|lam|ezekiel|ezek|daniel|dan|hosea|hos|joel|amos|obadiah|jonah|micah|mic|nahum|nah|habakkuk|hab|zephaniah|zeph|haggai|hag|zechariah|zech|malachi|mal|matthew|matt|mark|luke|john|acts|romans|rom|(?:first|second|1st?|2nd?)\s*corinthians|corinthians|cor|galatians|gal|ephesians|eph|philippians|phil|colossians|col|(?:first|second|1st?|2nd?)\s*thessalonians|thessalonians|thess|(?:first|second|1st?|2nd?)\s*timothy|timothy|tim|titus|philemon|phlm|hebrews|heb|james|jas|(?:first|second|1st?|2nd?)\s*peter|peter|pet|(?:first|second|third|1st?|2nd?|3rd?)\s*john|jude|revelation|rev)\s+(\d+)(?:[: ](\d+))?/i;
 
+// Stricter regex used to inline-highlight references in the live transcript.
+// Requires the explicit "chapter:verse" colon (or dot) form so partial phrases
+// like "John 3" or "Acts 5 minutes" don't get falsely linked. The /g flag is
+// required for the highlighter's exec loop; consumers must reset .lastIndex
+// before each pass.
+const INLINE_REF_RE = new RegExp(
+  '\\b(?:(?:1st|2nd|3rd|1|2|3|First|Second|Third)\\s+)?' +
+  '(?:Genesis|Gen|Exodus|Exod?|Leviticus|Lev|Numbers|Num|Deuteronomy|Deut|' +
+  'Joshua|Josh|Judges|Judg|Ruth|Samuel|Sam|Kings|Kgs|Chronicles|Chron|Chr|' +
+  'Ezra|Nehemiah|Neh|Esther|Est|Job|Psalms?|Psa?|Proverbs?|Prov|' +
+  'Ecclesiastes|Eccl|Song(?:\\s+of\\s+Solomon)?|Isaiah|Isa|Jeremiah|Jer|' +
+  'Lamentations|Lam|Ezekiel|Ezek|Daniel|Dan|Hosea|Hos|Joel|Amos|Obadiah|Obad|' +
+  'Jonah|Jon|Micah|Mic|Nahum|Nah|Habakkuk|Hab|Zephaniah|Zeph|Haggai|Hag|' +
+  'Zechariah|Zech|Malachi|Mal|Matthew|Matt|Mt|Mark|Mk|Luke|Lk|John|Jhn|Jn|Acts|' +
+  'Romans|Rom|Corinthians|Cor|Galatians|Gal|Ephesians|Eph|Philippians|Phil|' +
+  'Colossians|Col|Thessalonians|Thess|Timothy|Tim|Titus|Tit|Philemon|Phlm|' +
+  'Hebrews|Heb|James|Jas|Peter|Pet|Jude|Revelation|Rev)' +
+  '\\s+(\\d{1,3})\\s*[:.]\\s*(\\d{1,3})(?:\\s*[-–]\\s*(\\d{1,3}))?\\b',
+  'gi'
+);
+
+// Walk `text` and produce safe HTML where any digit-form scripture reference
+// is wrapped in <a class="scripture-ref" data-ref="…">. Non-match regions are
+// run through escapeHtml so the result is still safe to assign via innerHTML.
+// The data-ref attribute carries the same string the user sees, so click
+// handlers can hand it to parseReference().
+function highlightScriptureRefs(text) {
+  if (!text) return '';
+  let out = '';
+  let lastIndex = 0;
+  INLINE_REF_RE.lastIndex = 0;
+  let m;
+  while ((m = INLINE_REF_RE.exec(text)) !== null) {
+    out += escapeHtml(text.slice(lastIndex, m.index));
+    const matched = m[0];
+    const safe = escapeHtml(matched);
+    out += `<a class="scripture-ref" data-ref="${safe}" title="Click to queue · Shift-click or double-click to project">${safe}</a>`;
+    lastIndex = m.index + matched.length;
+  }
+  out += escapeHtml(text.slice(lastIndex));
+  return out;
+}
+
 // Stop-word list for keyword-based prediction. Tuned to keep short
 // theological words (sin, God, law, ark, joy) by filtering on length > 2
 // at the call site rather than including those words here.
