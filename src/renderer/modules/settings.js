@@ -200,11 +200,16 @@ async function loadSettingsView() {
     if (el) el.textContent = `${hw.cpuCores}-core ${hw.cpuModel.split('@')[0].trim()} · ${hw.gpuName}`;
   }).catch(() => {});
   setInputVal('setting-openai-key',        s.openai_api_key || '');
+  setSelectVal('setting-ai-provider',      s.ai_summary_provider || 'openai');
+  setInputVal('setting-anthropic-key',     s.anthropic_api_key || '');
+  setSelectVal('setting-claude-model',     s.claude_model || 'claude-haiku-4-5');
   // Show/hide model row based on provider
   const modelRow = document.getElementById('whisper-model-row');
   if (modelRow) modelRow.style.display = (s.whisper_provider === 'whisper-local') ? 'flex' : 'none';
-  const keyRow = document.getElementById('openai-key-row');
-  if (keyRow) keyRow.style.display = (s.ai_summary === 'true') ? 'flex' : 'none';
+  applyAiProviderVisibility(
+    s.ai_summary === 'true',
+    s.ai_summary_provider === 'claude' ? 'claude' : 'openai',
+  );
   setSelectVal('setting-speech-quality',      s.speech_quality);
   setCheckbox('setting-autostart-transcription', s.autostart_transcription === 'true');
   setSlider('setting-debounce',      'setting-debounce-val',      s.debounce_ms || '1500',  v => (v/1000).toFixed(1)+'s');
@@ -266,6 +271,20 @@ async function loadSettingsView() {
   await loadMicrophones();
 }
 
+// Show only the relevant API key / model rows for the current AI provider.
+// Hides everything when the AI-summary toggle is off.
+function applyAiProviderVisibility(aiEnabled, provider) {
+  const providerRow = document.getElementById('ai-provider-row');
+  const openaiRow   = document.getElementById('openai-key-row');
+  const anthRow     = document.getElementById('anthropic-key-row');
+  const modelRow    = document.getElementById('claude-model-row');
+  const isClaude    = provider === 'claude';
+  if (providerRow) providerRow.style.display = aiEnabled                  ? 'flex' : 'none';
+  if (openaiRow)   openaiRow.style.display   = aiEnabled && !isClaude     ? 'flex' : 'none';
+  if (anthRow)     anthRow.style.display     = aiEnabled &&  isClaude     ? 'flex' : 'none';
+  if (modelRow)    modelRow.style.display    = aiEnabled &&  isClaude     ? 'flex' : 'none';
+}
+
 async function saveAllSettings() {
   const theme    = document.getElementById('settings-theme')?.value;
   const fontSize = document.getElementById('settings-font-size')?.value;
@@ -276,7 +295,10 @@ async function saveAllSettings() {
     ['whisper_threads',         getSelectVal('setting-whisper-threads') || 'auto'],
     ['whisper_gpu',             getCheckbox('setting-whisper-gpu')],
     ['ai_summary',              getCheckbox('setting-ai-summary')],
+    ['ai_summary_provider',     getSelectVal('setting-ai-provider') || 'openai'],
     ['openai_api_key',          getInputVal('setting-openai-key')],
+    ['anthropic_api_key',       getInputVal('setting-anthropic-key')],
+    ['claude_model',            getSelectVal('setting-claude-model') || 'claude-haiku-4-5'],
     ['speech_quality',          getSelectVal('setting-speech-quality')],
     ['autostart_transcription', getCheckbox('setting-autostart-transcription')],
     ['debounce_ms',             getSliderVal('setting-debounce')],

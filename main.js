@@ -1125,51 +1125,83 @@ function registerVoskHandlers() {
   });
 }
 
+const SUMMARY_SYSTEM_PROMPT =
+  'You are a helpful assistant for church sermon operators. Summarize the following sermon excerpt in 3–5 concise sentences, focusing on the main theological themes, key scripture references, and central message.';
+
 function registerAiHandlers() {
-  ipcMain.handle('ai:summarize', async (_event, { transcript, apiKey }) => {
+  ipcMain.handle('ai:summarize', async (_event, { transcript, provider, apiKey, model }) => {
     if (!apiKey || !transcript || transcript.trim().split(/\s+/).length < 30)
       return { ok: false, error: 'insufficient_data' };
 
-    const body  = JSON.stringify({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a helpful assistant for church sermon operators. Summarize the following sermon excerpt in 3–5 concise sentences, focusing on the main theological themes, key scripture references, and central message.',
-        },
-        { role: 'user', content: transcript.slice(-4000) },
-      ],
-      max_tokens: 200,
-      temperature: 0.4,
-    });
-
-    function postJson(url, data, headers) {
-      return new Promise((resolve, reject) => {
-        const options = { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), ...headers } };
-        const req = https.request(url, options, res => {
-          let raw = '';
-          res.on('data', c => { raw += c; });
-          res.on('end', () => {
-            if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}: ${raw.slice(0,200)}`));
-            resolve(raw);
-          });
-        });
-        req.on('error', reject);
-        req.setTimeout(20000, () => { req.destroy(); reject(new Error('Timed out')); });
-        req.write(data);
-        req.end();
-      });
-    }
+    const excerpt = transcript.slice(-4000);
+    const which   = provider === 'claude' ? 'claude' : 'openai';
 
     try {
-      const raw      = await postJson('https://api.openai.com/v1/chat/completions', body, { Authorization: `Bearer ${apiKey}` });
-      const parsed   = JSON.parse(raw);
-      const summary  = parsed.choices?.[0]?.message?.content?.trim();
+      if (which === 'claude') {
+        // Anthropic SDK — short, non-streaming summarization. Adaptive thinking
+        // and streaming aren't needed for a 200-token output, and the system
+        // prompt is too short to benefit from prompt caching.
+        const { default: Anthropic } = require('@anthropic-ai/sdk');
+        const client = new Anthropic({ apiKey });
+        const response = await client.messages.create({
+          model:      model || 'claude-haiku-4-5',
+          max_tokens: 200,
+          system:     SUMMARY_SYSTEM_PROMPT,
+          messages:   [{ role: 'user', content: excerpt }],
+        });
+        const block = response.content.find(b => b.type === 'text');
+        const summary = block?.text?.trim();
+        if (!summary) return { ok: false, error: 'No summary returned' };
+        return { ok: true, summary };
+      }
+
+      // OpenAI — unchanged path, raw https.request().
+      const body = JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
+          { role: 'user',   content: excerpt },
+        ],
+        max_tokens:  200,
+        temperature: 0.4,
+      });
+      const raw = await postJsonForSummary(
+        'https://api.openai.com/v1/chat/completions',
+        body,
+        { Authorization: `Bearer ${apiKey}` },
+      );
+      const parsed  = JSON.parse(raw);
+      const summary = parsed.choices?.[0]?.message?.content?.trim();
       if (!summary) return { ok: false, error: 'No summary returned' };
       return { ok: true, summary };
     } catch (err) {
       return { ok: false, error: err.message };
     }
+  });
+}
+
+function postJsonForSummary(url, data, headers) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type':   'application/json',
+        'Content-Length': Buffer.byteLength(data),
+        ...headers,
+      },
+    };
+    const req = https.request(url, options, res => {
+      let raw = '';
+      res.on('data', c => { raw += c; });
+      res.on('end', () => {
+        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}: ${raw.slice(0, 200)}`));
+        resolve(raw);
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(20000, () => { req.destroy(); reject(new Error('Timed out')); });
+    req.write(data);
+    req.end();
   });
 }
 

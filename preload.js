@@ -123,8 +123,8 @@ contextBridge.exposeInMainWorld('biblecast', {
     ipcRenderer.on('whisper:progress', (_event, data) => callback(data)),
 
   // --- AI Sermon Summary ---
-  summarizeSermon: (transcript, apiKey) =>
-    ipcRenderer.invoke('ai:summarize', { transcript, apiKey }),
+  summarizeSermon: (transcript, opts) =>
+    ipcRenderer.invoke('ai:summarize', { transcript, ...(opts || {}) }),
 
   // --- App info ---
   getAppVersion: () =>

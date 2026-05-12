@@ -888,10 +888,15 @@ function bindEvents() {
     }
   });
 
-  // AI summary toggle: show/hide API key row
+  // AI summary toggle and provider: keep visibility of the relevant key /
+  // model rows in sync. applyAiProviderVisibility lives in settings.js.
   document.getElementById('setting-ai-summary')?.addEventListener('change', e => {
-    const keyRow = document.getElementById('openai-key-row');
-    if (keyRow) keyRow.style.display = e.target.checked ? 'flex' : 'none';
+    const provider = document.getElementById('setting-ai-provider')?.value || 'openai';
+    applyAiProviderVisibility(e.target.checked, provider);
+  });
+  document.getElementById('setting-ai-provider')?.addEventListener('change', e => {
+    const enabled = document.getElementById('setting-ai-summary')?.checked === true;
+    applyAiProviderVisibility(enabled, e.target.value);
   });
 
   // Whisper model change: reset cached pipeline so new model loads on next use

@@ -2,8 +2,13 @@
  *
  * Builds a running summary of the live transcript. Always shows a local
  * keyword-frequency summary; if AI summary is enabled in settings and
- * an OpenAI key is configured, also asks the main process for an AI
- * summary every 200 new words.
+ * an API key is configured for the selected provider, also asks the main
+ * process for an AI summary every 200 new words.
+ *
+ * Providers (settings.ai_summary_provider):
+ *   'openai' (default) → OpenAI gpt-3.5-turbo, key in settings.openai_api_key
+ *   'claude'           → Anthropic Claude (model in settings.claude_model,
+ *                        key in settings.anthropic_api_key)
  *
  * Reads fullTranscript and settings from renderer.js, and extractKeywords
  * from the search/prediction code that still lives in renderer.js. All
@@ -11,6 +16,26 @@
  */
 
 let summaryWordCount = 0; // word count at last AI summary trigger
+
+// Resolve the active provider and its API key from settings. Defaults to
+// OpenAI so existing installs with openai_api_key set keep working.
+function resolveSummaryProvider() {
+  const provider = settings.ai_summary_provider === 'claude' ? 'claude' : 'openai';
+  if (provider === 'claude') {
+    return {
+      provider,
+      apiKey: settings.anthropic_api_key || '',
+      model:  settings.claude_model      || 'claude-haiku-4-5',
+      label:  'Claude',
+    };
+  }
+  return {
+    provider,
+    apiKey: settings.openai_api_key || '',
+    model:  undefined,
+    label:  'OpenAI',
+  };
+}
 
 function updateSermonSummary() {
   const el    = document.getElementById('summary-text');
@@ -34,14 +59,14 @@ function updateSermonSummary() {
   const localSummary = `${words.length} words · Themes: ${topWords.join(', ')}`;
 
   // If AI summary is enabled and enough new words have accumulated, trigger it
-  const useAI  = settings.ai_summary === 'true';
-  const apiKey = settings.openai_api_key || '';
+  const useAI   = settings.ai_summary === 'true';
+  const cfg     = resolveSummaryProvider();
   const newWords = words.length - summaryWordCount;
 
-  if (useAI && apiKey && newWords >= 200) {
+  if (useAI && cfg.apiKey && newWords >= 200) {
     summaryWordCount = words.length;
-    summarizeWithAI(localSummary);
-  } else if (!useAI || !apiKey) {
+    summarizeWithAI(localSummary, cfg);
+  } else if (!useAI || !cfg.apiKey) {
     // Update badge to show "Local" mode
     const badge = document.getElementById('summary-provider-badge');
     if (badge) { badge.textContent = 'Local'; badge.className = 'whisper-status'; }
@@ -49,19 +74,22 @@ function updateSermonSummary() {
   }
 }
 
-async function summarizeWithAI(fallbackText) {
-  const el     = document.getElementById('summary-text');
-  const badge  = document.getElementById('summary-provider-badge');
-  const apiKey = settings.openai_api_key || '';
+async function summarizeWithAI(fallbackText, cfg) {
+  const el    = document.getElementById('summary-text');
+  const badge = document.getElementById('summary-provider-badge');
 
-  if (badge) { badge.textContent = 'AI'; badge.className = 'whisper-status ai'; }
-  if (el) el.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Generating AI summary...</span>`;
+  if (badge) { badge.textContent = cfg.label; badge.className = 'whisper-status ai'; }
+  if (el) el.innerHTML = `<span style="color:var(--text-muted);font-style:italic">Generating ${cfg.label} summary...</span>`;
 
   try {
     const MAX_AI_WORDS = 2000;
-    const allWords   = fullTranscript.trim().split(/\s+/).filter(Boolean);
-    const aiInput    = allWords.slice(-MAX_AI_WORDS).join(' ');
-    const result = await api.summarizeSermon(aiInput, apiKey);
+    const allWords = fullTranscript.trim().split(/\s+/).filter(Boolean);
+    const aiInput  = allWords.slice(-MAX_AI_WORDS).join(' ');
+    const result = await api.summarizeSermon(aiInput, {
+      provider: cfg.provider,
+      apiKey:   cfg.apiKey,
+      model:    cfg.model,
+    });
     if (result.ok && el) {
       el.textContent = result.summary;
     } else {

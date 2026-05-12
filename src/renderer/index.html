@@ -677,12 +677,22 @@
             <div class="setting-row">
               <div class="setting-info">
                 <div class="setting-name">AI sermon summary</div>
-                <div class="setting-desc">Use GPT-3.5 (OpenAI) to generate a structured sermon summary. Requires an OpenAI API key below. Falls back to keyword extraction when disabled or offline.</div>
+                <div class="setting-desc">Generate a structured sermon summary using OpenAI or Anthropic Claude. Falls back to keyword extraction when disabled or offline.</div>
               </div>
               <label class="toggle-wrap">
                 <input type="checkbox" id="setting-ai-summary">
                 <span class="toggle-track"></span>
               </label>
+            </div>
+            <div class="setting-row" id="ai-provider-row">
+              <div class="setting-info">
+                <div class="setting-name">AI provider</div>
+                <div class="setting-desc">Choose which API powers the sermon summary.</div>
+              </div>
+              <select id="setting-ai-provider" class="setting-select">
+                <option value="openai">OpenAI (gpt-3.5-turbo)</option>
+                <option value="claude">Anthropic Claude</option>
+              </select>
             </div>
             <div class="setting-row" id="openai-key-row">
               <div class="setting-info">
@@ -690,6 +700,24 @@
                 <div class="setting-desc">Used for AI sermon summary (GPT-3.5). Leave blank to use local keyword extraction instead.</div>
               </div>
               <input type="password" id="setting-openai-key" class="setting-input" placeholder="sk-…" autocomplete="off" />
+            </div>
+            <div class="setting-row" id="anthropic-key-row">
+              <div class="setting-info">
+                <div class="setting-name">Anthropic API key</div>
+                <div class="setting-desc">Used for AI sermon summary when Claude is selected as the provider.</div>
+              </div>
+              <input type="password" id="setting-anthropic-key" class="setting-input" placeholder="sk-ant-…" autocomplete="off" />
+            </div>
+            <div class="setting-row" id="claude-model-row">
+              <div class="setting-info">
+                <div class="setting-name">Claude model</div>
+                <div class="setting-desc">Haiku is fastest and cheapest — recommended for repeated mid-sermon summaries. Sonnet and Opus deliver higher quality at higher cost.</div>
+              </div>
+              <select id="setting-claude-model" class="setting-select">
+                <option value="claude-haiku-4-5">Claude Haiku 4.5 (fast, cheap)</option>
+                <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (balanced)</option>
+                <option value="claude-opus-4-7">Claude Opus 4.7 (best quality)</option>
+              </select>
             </div>
             <div class="setting-row">
               <div class="setting-info">
