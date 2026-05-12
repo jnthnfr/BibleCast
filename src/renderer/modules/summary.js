@@ -85,6 +85,29 @@ function updateSermonSummary() {
   }
 }
 
+// Map a raw provider error string to a short, operator-friendly label.
+function describeSummaryError(raw) {
+  const msg = String(raw || '').toLowerCase();
+  if (!msg)                                            return 'API error';
+  if (msg.includes('insufficient_quota') ||
+      msg.includes('credit') ||
+      msg.includes('billing') ||
+      msg.includes('quota'))                           return 'Out of credits';
+  if (msg.includes('401') ||
+      msg.includes('invalid_api_key') ||
+      msg.includes('authentication') ||
+      msg.includes('api key') ||
+      msg.includes('api_key'))                         return 'Bad API key';
+  if (msg.includes('403') || msg.includes('permission')) return 'Permission denied';
+  if (msg.includes('429') || msg.includes('rate'))     return 'Rate limited';
+  if (msg.includes('overload') || msg.includes('529')) return 'Provider overloaded';
+  if (msg.includes('timed out') || msg.includes('timeout')) return 'Timed out';
+  if (msg.includes('etimedout') || msg.includes('econnrefused') ||
+      msg.includes('enotfound') || msg.includes('network'))  return 'Network error';
+  if (msg.includes('http 5'))                          return 'Provider error';
+  return 'API error';
+}
+
 async function summarizeWithAI(fallbackText, cfg) {
   const el    = document.getElementById('summary-text');
   const badge = document.getElementById('summary-provider-badge');
@@ -103,11 +126,39 @@ async function summarizeWithAI(fallbackText, cfg) {
     });
     if (result.ok && el) {
       el.textContent = result.summary;
-    } else {
-      if (el) el.textContent = fallbackText;
-      if (result.error !== 'insufficient_data') console.warn('[AI Summary]', result.error);
+      return;
     }
+    // Anything below this line is the failure path.
+    if (result.error === 'insufficient_data') {
+      // Not enough transcript yet — quiet fallback to the local summary,
+      // no error UI.
+      if (el) el.textContent = fallbackText;
+      return;
+    }
+    console.warn('[AI Summary]', result.error);
+    surfaceSummaryError(cfg, result.error, fallbackText);
   } catch (e) {
-    if (el) el.textContent = fallbackText;
+    console.warn('[AI Summary]', e.message);
+    surfaceSummaryError(cfg, e.message, fallbackText);
+  }
+}
+
+// Render the local keyword fallback with a visible error banner so the
+// operator knows *why* the AI summary didn't update.
+function surfaceSummaryError(cfg, rawError, fallbackText) {
+  const el    = document.getElementById('summary-text');
+  const badge = document.getElementById('summary-provider-badge');
+  const short = describeSummaryError(rawError);
+  if (badge) {
+    badge.textContent = `${cfg.label} · ${short}`;
+    badge.className   = 'whisper-status error';
+    badge.title       = String(rawError || '').slice(0, 200);
+  }
+  if (el) {
+    el.innerHTML =
+      `<div style="color:var(--danger,#f87171);font-size:0.7rem;margin-bottom:4px">` +
+      `${escapeHtml(cfg.label)} summary failed: ${escapeHtml(short)}. Showing local summary.` +
+      `</div>` +
+      escapeHtml(fallbackText);
   }
 }

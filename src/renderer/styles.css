@@ -521,6 +521,7 @@ html, body {
 .whisper-status.processing { background: rgba(217,119,6,0.18); color: #fbbf24; }
 .whisper-status.downloading { background: rgba(26,86,219,0.18); color: #60a5fa; }
 .whisper-status.ai { background: rgba(22,163,74,0.18); color: #4ade80; }
+.whisper-status.error { background: rgba(220,38,38,0.22); color: #f87171; text-transform: none; letter-spacing: 0; }
 
 /* ── Live Output panel ───────────────────────────── */
 .output-panel {
