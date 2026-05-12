@@ -20,12 +20,12 @@
  *   modules/voice-commands.js     checkVoiceCommands, navigateVerse
  *   modules/summary.js            summaryWordCount, updateSermonSummary,
  *                                 summarizeWithAI
- *   modules/transcription.js      4 STT engines (Web Speech, Chrome bridge,
- *                                 Whisper, Vosk) + recognition, isListening,
- *                                 fullTranscript, predictionTimeout, vosk*,
- *                                 whisper*, chromeBridgeReady, plus the
- *                                 common helpers setWhisperBadge,
- *                                 onNewFinalText, updateTranscriptDisplay
+ *   modules/transcription.js      2 STT engines (Chrome bridge, Whisper)
+ *                                 + isListening, fullTranscript,
+ *                                 predictionTimeout, whisper*,
+ *                                 chromeBridgeReady, plus the common
+ *                                 helpers setWhisperBadge, onNewFinalText,
+ *                                 updateTranscriptDisplay
  *   modules/search.js             normalizeSpokenScripture, detectScriptureRef,
  *                                 updateBookAutocomplete, extractKeywords,
  *                                 getConfidenceThreshold, schedulePrediction,
@@ -65,11 +65,11 @@
  */
 
 // ── Transcription state and engines ───────────────────────────────────────────
-// All transcription bindings (recognition, isListening, fullTranscript,
-// predictionTimeout, whisper*, vosk*, chromeBridgeReady) and the four
-// engines (Web Speech, Chrome bridge, Whisper, Vosk) plus their common
-// helpers (setWhisperBadge, onNewFinalText, updateTranscriptDisplay)
-// live in modules/transcription.js, loaded earlier in index.html.
+// All transcription bindings (isListening, fullTranscript, predictionTimeout,
+// whisper*, chromeBridgeReady) and the two engines (Chrome bridge, Whisper)
+// plus their common helpers (setWhisperBadge, onNewFinalText,
+// updateTranscriptDisplay) live in modules/transcription.js, loaded earlier
+// in index.html.
 
 // ── Projection preview renderer ────────────────────────────────────────────────
 // PROJ_W, PROJ_H, getDisplayBg/Font/Ref/Text helpers,
@@ -91,7 +91,7 @@ async function init() {
   initResizeSplitters();
   initBibleBrowser();
   bindEvents();
-  initSpeechRecognition();
+  initWhisperProgress();
   initTranscriptClickHandlers();
   initUpdaterEvents();
   await loadMicrophones();

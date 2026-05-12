@@ -103,6 +103,15 @@ function getConfidenceThreshold() {
   return 2; // medium
 }
 
+// Rolling tail buffer for cross-chunk reference detection. When Whisper
+// flushes every 5 seconds (or Web Speech emits a final chunk), a reference
+// like "John three sixteen" can land partly in chunk N and partly in
+// chunk N+1. We keep the trailing ~150 chars of the previous chunk and
+// run the regex over (previous_tail + current_chunk) so a split reference
+// is still matched.
+let _refTailBuffer = '';
+const REF_TAIL_LEN = 150;
+
 function schedulePrediction(text) {
   clearTimeout(predictionTimeout);
   const delay = parseInt(settings.debounce_ms || 1500, 10);
@@ -114,8 +123,14 @@ async function runPrediction(text) {
   let results = [];
   let resultSource = null; // 'ref' (path 1) or 'keyword' (path 2)
 
+  // Prepend the previous chunk's trailing edge so references that span
+  // chunk boundaries can still be detected. Update the tail AFTER matching
+  // so the next call sees this chunk's trailing edge too.
+  const matchInput = (_refTailBuffer ? _refTailBuffer + ' ' : '') + text;
+  _refTailBuffer   = text.slice(-REF_TAIL_LEN);
+
   // Try direct reference match first (e.g. "John 3:16" spoken aloud)
-  const ref = detectScriptureRef(text);
+  const ref = detectScriptureRef(matchInput);
   if (ref) {
     results = await api.searchVerses(ref, translation);
     if (results.length) resultSource = 'ref';

@@ -4,9 +4,8 @@
  * shared by every classic <script> in index.html, so renderer.js and
  * any other module can read or assign them by simple name.
  *
- * Transcription engine state (recognition, fullTranscript, vosk* and
- * whisper* fields) intentionally stays in renderer.js for now and will
- * move when the transcription module is extracted in a later step.
+ * Transcription engine state (fullTranscript, whisper* fields)
+ * lives in modules/transcription.js.
  */
 
 // IPC bridge into the main process. Exposed by preload.js as
@@ -46,6 +45,6 @@ let settings = {
   custom_font_family:     '',
   show_translation:       true,
   show_reference:         true,
-  whisper_provider:       'web-speech',
+  whisper_provider:       'chrome-bridge',
   auto_project_only_on_exact_ref: true,  // strict mode: auto-project only on path-1 reference matches
 };
