@@ -203,12 +203,15 @@ async function loadSettingsView() {
   setSelectVal('setting-ai-provider',      s.ai_summary_provider || 'openai');
   setInputVal('setting-anthropic-key',     s.anthropic_api_key || '');
   setSelectVal('setting-claude-model',     s.claude_model || 'claude-haiku-4-5');
+  setInputVal('setting-google-key',        s.google_api_key || '');
+  setSelectVal('setting-gemini-model',     s.gemini_model || 'gemini-2.5-flash');
   // Show/hide model row based on provider
   const modelRow = document.getElementById('whisper-model-row');
   if (modelRow) modelRow.style.display = (s.whisper_provider === 'whisper-local') ? 'flex' : 'none';
+  const rawProvider = s.ai_summary_provider;
   applyAiProviderVisibility(
     s.ai_summary === 'true',
-    s.ai_summary_provider === 'claude' ? 'claude' : 'openai',
+    rawProvider === 'claude' || rawProvider === 'gemini' ? rawProvider : 'openai',
   );
   setSelectVal('setting-speech-quality',      s.speech_quality);
   setCheckbox('setting-autostart-transcription', s.autostart_transcription === 'true');
@@ -277,12 +280,16 @@ function applyAiProviderVisibility(aiEnabled, provider) {
   const providerRow = document.getElementById('ai-provider-row');
   const openaiRow   = document.getElementById('openai-key-row');
   const anthRow     = document.getElementById('anthropic-key-row');
-  const modelRow    = document.getElementById('claude-model-row');
-  const isClaude    = provider === 'claude';
-  if (providerRow) providerRow.style.display = aiEnabled                  ? 'flex' : 'none';
-  if (openaiRow)   openaiRow.style.display   = aiEnabled && !isClaude     ? 'flex' : 'none';
-  if (anthRow)     anthRow.style.display     = aiEnabled &&  isClaude     ? 'flex' : 'none';
-  if (modelRow)    modelRow.style.display    = aiEnabled &&  isClaude     ? 'flex' : 'none';
+  const claudeMdl   = document.getElementById('claude-model-row');
+  const googleRow   = document.getElementById('google-key-row');
+  const geminiMdl   = document.getElementById('gemini-model-row');
+  const show = (el, on) => { if (el) el.style.display = on ? 'flex' : 'none'; };
+  show(providerRow, aiEnabled);
+  show(openaiRow,   aiEnabled && provider === 'openai');
+  show(anthRow,     aiEnabled && provider === 'claude');
+  show(claudeMdl,   aiEnabled && provider === 'claude');
+  show(googleRow,   aiEnabled && provider === 'gemini');
+  show(geminiMdl,   aiEnabled && provider === 'gemini');
 }
 
 async function saveAllSettings() {
@@ -299,6 +306,8 @@ async function saveAllSettings() {
     ['openai_api_key',          getInputVal('setting-openai-key')],
     ['anthropic_api_key',       getInputVal('setting-anthropic-key')],
     ['claude_model',            getSelectVal('setting-claude-model') || 'claude-haiku-4-5'],
+    ['google_api_key',          getInputVal('setting-google-key')],
+    ['gemini_model',            getSelectVal('setting-gemini-model') || 'gemini-2.5-flash'],
     ['speech_quality',          getSelectVal('setting-speech-quality')],
     ['autostart_transcription', getCheckbox('setting-autostart-transcription')],
     ['debounce_ms',             getSliderVal('setting-debounce')],

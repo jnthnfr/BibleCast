@@ -9,6 +9,8 @@
  *   'openai' (default) → OpenAI gpt-3.5-turbo, key in settings.openai_api_key
  *   'claude'           → Anthropic Claude (model in settings.claude_model,
  *                        key in settings.anthropic_api_key)
+ *   'gemini'           → Google Gemini (model in settings.gemini_model,
+ *                        key in settings.google_api_key)
  *
  * Reads fullTranscript and settings from renderer.js, and extractKeywords
  * from the search/prediction code that still lives in renderer.js. All
@@ -20,13 +22,22 @@ let summaryWordCount = 0; // word count at last AI summary trigger
 // Resolve the active provider and its API key from settings. Defaults to
 // OpenAI so existing installs with openai_api_key set keep working.
 function resolveSummaryProvider() {
-  const provider = settings.ai_summary_provider === 'claude' ? 'claude' : 'openai';
+  const raw = settings.ai_summary_provider;
+  const provider = raw === 'claude' || raw === 'gemini' ? raw : 'openai';
   if (provider === 'claude') {
     return {
       provider,
       apiKey: settings.anthropic_api_key || '',
       model:  settings.claude_model      || 'claude-haiku-4-5',
       label:  'Claude',
+    };
+  }
+  if (provider === 'gemini') {
+    return {
+      provider,
+      apiKey: settings.google_api_key || '',
+      model:  settings.gemini_model   || 'gemini-2.5-flash',
+      label:  'Gemini',
     };
   }
   return {

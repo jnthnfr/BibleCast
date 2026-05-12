@@ -1134,7 +1134,9 @@ function registerAiHandlers() {
       return { ok: false, error: 'insufficient_data' };
 
     const excerpt = transcript.slice(-4000);
-    const which   = provider === 'claude' ? 'claude' : 'openai';
+    const which   = provider === 'claude' ? 'claude'
+                  : provider === 'gemini' ? 'gemini'
+                  : 'openai';
 
     try {
       if (which === 'claude') {
@@ -1151,6 +1153,24 @@ function registerAiHandlers() {
         });
         const block = response.content.find(b => b.type === 'text');
         const summary = block?.text?.trim();
+        if (!summary) return { ok: false, error: 'No summary returned' };
+        return { ok: true, summary };
+      }
+
+      if (which === 'gemini') {
+        // Google Gemini — raw https to keep parity with the OpenAI path and
+        // avoid pulling in another SDK for a single 200-token call.
+        const geminiModel = model || 'gemini-2.5-flash';
+        const body = JSON.stringify({
+          system_instruction: { parts: [{ text: SUMMARY_SYSTEM_PROMPT }] },
+          contents: [{ role: 'user', parts: [{ text: excerpt }] }],
+          generationConfig: { maxOutputTokens: 200, temperature: 0.4 },
+        });
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
+        const raw = await postJsonForSummary(url, body, { 'x-goog-api-key': apiKey });
+        const parsed = JSON.parse(raw);
+        const summary = parsed.candidates?.[0]?.content?.parts
+          ?.map(p => p.text || '').join('').trim();
         if (!summary) return { ok: false, error: 'No summary returned' };
         return { ok: true, summary };
       }
