@@ -16,14 +16,13 @@
     "src/**/*",
     "assets/**/*",
     "node_modules/**/*",
-    "node_modules/vosk-browser/dist/**/*",
     "!node_modules/.cache",
+    "!assets/vosk/**/*",
     "!**/*.md",
     "!dist/**/*"
   ],
   "extraResources": [
-    { "from": "scripts/scrape_bible.py", "to": "scripts/scrape_bible.py" },
-    { "from": "assets/vosk/vosk-model-small-en-us-0.15.tar.gz", "to": "vosk/vosk-model-small-en-us-0.15.tar.gz" }
+    { "from": "scripts/scrape_bible.py", "to": "scripts/scrape_bible.py" }
   ],
   "win": {
     "target": [

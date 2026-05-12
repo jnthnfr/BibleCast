@@ -36,9 +36,13 @@
 
 async function loadAllSettings() {
   const s  = await api.getSettings();
-  if (!s.whisper_provider) {
-    s.whisper_provider = 'web-speech';
-    api.saveSetting('whisper_provider', 'web-speech');
+  // Migrate legacy provider values from before the engine simplification:
+  //   - undefined / 'web-speech' / 'vosk' → 'chrome-bridge' (the new default)
+  //   - 'whisper-local' stays as-is
+  // Old DBs that still hold 'vosk' or 'web-speech' get auto-rewritten on next save.
+  if (!s.whisper_provider || s.whisper_provider === 'web-speech' || s.whisper_provider === 'vosk') {
+    s.whisper_provider = 'chrome-bridge';
+    api.saveSetting('whisper_provider', 'chrome-bridge');
   }
   settings = { ...settings, ...s };
 
@@ -188,8 +192,8 @@ async function loadSettingsView() {
   const s = await api.getSettings();
 
   // Transcription & Audio
-  setSelectVal('setting-whisper-provider', s.whisper_provider || 'web-speech');
-  setSelectVal('setting-whisper-model',    s.whisper_model    || 'Xenova/whisper-base.en');
+  setSelectVal('setting-whisper-provider', s.whisper_provider || 'chrome-bridge');
+  setSelectVal('setting-whisper-model',    s.whisper_model    || 'Xenova/whisper-small.en');
   setSelectVal('setting-whisper-threads',  s.whisper_threads  || 'auto');
   setCheckbox('setting-whisper-gpu',       s.whisper_gpu === 'true');
   setCheckbox('setting-ai-summary',        s.ai_summary === 'true');

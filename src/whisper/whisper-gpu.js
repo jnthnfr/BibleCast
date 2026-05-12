@@ -17,7 +17,7 @@ window.electronAPI.on('whisper:gpu:transcribe', async ({ requestId, audioArray, 
       env.cacheDir = cacheDir;
       gpuPipeline = await pipeline(
         'automatic-speech-recognition',
-        modelId || 'Xenova/whisper-base.en',
+        modelId || 'Xenova/whisper-small.en',
         {
           device: 'webgpu',
           progress_callback: p => window.electronAPI.send('whisper:gpu:progress', p),

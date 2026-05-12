@@ -623,23 +623,23 @@
             <div class="setting-row">
               <div class="setting-info">
                 <div class="setting-name">Speech engine</div>
-                <div class="setting-desc">Vosk gives real-time word-by-word output (downloads ~45 MB model once, fully offline). Whisper AI is more accurate but transcribes in 2–3 second chunks. Web Speech uses your system engine (often Google Cloud) and requires internet.</div>
+                <div class="setting-desc">Chrome bridge uses Google's cloud-backed Web Speech engine through a hidden Chrome process — real-time, very accurate, requires internet. Whisper AI runs locally on your CPU/GPU — fully offline, transcribes in 5-second chunks.</div>
               </div>
               <select id="setting-whisper-provider" class="setting-select">
-                <option value="vosk">Vosk — real-time, offline (recommended)</option>
+                <option value="chrome-bridge" selected>Chrome bridge — real-time, cloud (recommended)</option>
                 <option value="whisper-local">Whisper AI — most accurate, offline (slower)</option>
-                <option value="web-speech" selected>Web Speech API — system engine, cloud-based</option>
               </select>
             </div>
             <div class="setting-row" id="whisper-model-row">
               <div class="setting-info">
                 <div class="setting-name">Whisper model size</div>
-                <div class="setting-desc">Larger models are more accurate but slower to load and use more RAM.</div>
+                <div class="setting-desc">Larger models are more accurate but slower to load and use more RAM. Small is the new default — base was too small for noisy real-world audio.</div>
               </div>
               <select id="setting-whisper-model" class="setting-select">
-                <option value="Xenova/whisper-tiny.en">Tiny — ~75 MB (fastest)</option>
-                <option value="Xenova/whisper-base.en" selected>Base — ~150 MB (recommended)</option>
-                <option value="Xenova/whisper-small.en">Small — ~500 MB (most accurate)</option>
+                <option value="Xenova/whisper-tiny.en">Tiny — ~75 MB (fastest, low accuracy)</option>
+                <option value="Xenova/whisper-base.en">Base — ~150 MB</option>
+                <option value="Xenova/whisper-small.en" selected>Small — ~500 MB (recommended)</option>
+                <option value="Xenova/whisper-medium.en">Medium — ~1.5 GB (slowest, top accuracy)</option>
               </select>
             </div>
 

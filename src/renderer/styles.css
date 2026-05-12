@@ -1576,16 +1576,3 @@ button { cursor: pointer; }
 .bb-verse-item .bb-vref { font-weight: 600; color: var(--accent); font-size: 0.72rem; margin-bottom: 2px; }
 .bb-verse-item .bb-vtxt { color: var(--text-muted); }
 
-/* Vosk model loading spinner */
-@keyframes vosk-spin {
-  to { transform: rotate(360deg); }
-}
-.vosk-spinner {
-  width: 22px;
-  height: 22px;
-  border: 3px solid var(--surface3);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: vosk-spin 0.8s linear infinite;
-}
-
