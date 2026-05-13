@@ -17,7 +17,6 @@
     "assets/**/*",
     "node_modules/**/*",
     "!node_modules/.cache",
-    "!assets/vosk/**/*",
     "!**/*.md",
     "!dist/**/*"
   ],

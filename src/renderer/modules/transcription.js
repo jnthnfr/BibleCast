@@ -29,7 +29,6 @@ let whisperStream      = null;
 let whisperBuffer      = [];          // raw Float32 samples at 16 kHz
 let whisperFlushTimer  = null;        // interval to flush buffer every N seconds
 let whisperReady       = false;       // pipeline loaded flag
-let whisperOverlap     = null;        // last ~1s of audio from previous flush (Float32Array | null)
 
 // Chrome bridge readiness (listeners registered once per session)
 let chromeBridgeReady  = false;
@@ -168,6 +167,10 @@ function stopActiveTranscription() {
   stopChromeBridgeCapture();
   stopWhisperCapture();
   setWhisperBadge('');
+  // Clear the rolling tail buffer so a partial reference left over from
+  // the previous session can't false-match against the first chunk of
+  // the next session.
+  resetRefTailBuffer();
 }
 
 // Resolve the configured provider to one of the two live engines. Old
@@ -284,13 +287,12 @@ async function startWhisperCapture() {
 
     setWhisperBadge('Recording', 'recording');
 
-    // Reset overlap from any prior session
-    whisperOverlap = null;
-
     // Flush every 5 seconds. Longer than the 3s pre-revamp value: gives the
     // model enough acoustic context to disambiguate fast speech and emit
     // complete references in a single inference instead of splitting across
-    // chunk boundaries.
+    // chunk boundaries. Cross-chunk reference detection is handled at the
+    // text level by the rolling tail buffer in search.js — no audio overlap
+    // needed, which would otherwise cause text duplication around chunk seams.
     whisperFlushTimer = setInterval(() => flushWhisperBuffer(), 5000);
   } catch (err) {
     console.error('[Whisper] Mic access failed:', err.message);
@@ -311,7 +313,6 @@ async function startWhisperCapture() {
 function stopWhisperCapture() {
   clearInterval(whisperFlushTimer);
   whisperFlushTimer = null;
-  whisperOverlap    = null;
   // Flush remaining audio before stopping
   if (whisperBuffer.length > 8000) flushWhisperBuffer(); // match flushWhisperBuffer's own minimum threshold
   whisperBuffer = [];
@@ -330,29 +331,12 @@ function stopWhisperCapture() {
 // a flush is already in progress we skip the new tick rather than queuing.
 let _whisperFlushing = false;
 
-// Approximate 1 second of audio at 16 kHz. Used to carry an overlap between
-// flushes so a reference like "John three sixteen" doesn't get split across
-// chunk boundaries (the model has acoustic context from the previous chunk).
-const WHISPER_OVERLAP_SAMPLES = 16000;
-
 async function flushWhisperBuffer() {
   if (_whisperFlushing) return;
   if (whisperBuffer.length < 8000) return; // need at least 0.5s of new audio at 16 kHz
   _whisperFlushing = true;
 
-  // Drain the buffer; prepend the previous flush's tail so the model sees
-  // ~1s of overlap and split-word references stay intact.
-  const newSamples = whisperBuffer.splice(0, whisperBuffer.length);
-  const overlapLen = whisperOverlap ? whisperOverlap.length : 0;
-  const chunk      = new Float32Array(overlapLen + newSamples.length);
-  if (overlapLen) chunk.set(whisperOverlap, 0);
-  chunk.set(newSamples, overlapLen);
-
-  // Cache the trailing 1s of THIS chunk for the next flush.
-  whisperOverlap = chunk.length > WHISPER_OVERLAP_SAMPLES
-    ? chunk.slice(chunk.length - WHISPER_OVERLAP_SAMPLES)
-    : chunk.slice();
-
+  const chunk   = new Float32Array(whisperBuffer.splice(0, whisperBuffer.length));
   const modelId = settings.whisper_model || 'Xenova/whisper-small.en';
 
   setWhisperBadge('Processing...', 'processing');

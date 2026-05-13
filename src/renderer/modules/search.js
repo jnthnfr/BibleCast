@@ -104,13 +104,22 @@ function getConfidenceThreshold() {
 }
 
 // Rolling tail buffer for cross-chunk reference detection. When Whisper
-// flushes every 5 seconds (or Web Speech emits a final chunk), a reference
-// like "John three sixteen" can land partly in chunk N and partly in
-// chunk N+1. We keep the trailing ~150 chars of the previous chunk and
+// flushes every 5 seconds (or the Chrome bridge emits a final chunk), a
+// reference like "John three sixteen" can land partly in chunk N and partly
+// in chunk N+1. We keep the trailing ~150 chars of the previous chunk and
 // run the regex over (previous_tail + current_chunk) so a split reference
-// is still matched.
+// is still matched. The buffer auto-expires after 15 s of silence so a
+// long pause (prayer, music, a different topic) doesn't glue unrelated
+// phrases together.
 let _refTailBuffer = '';
-const REF_TAIL_LEN = 150;
+let _refTailAt     = 0;
+const REF_TAIL_LEN     = 150;
+const REF_TAIL_TTL_MS  = 15000;
+
+function resetRefTailBuffer() {
+  _refTailBuffer = '';
+  _refTailAt     = 0;
+}
 
 function schedulePrediction(text) {
   clearTimeout(predictionTimeout);
@@ -124,10 +133,14 @@ async function runPrediction(text) {
   let resultSource = null; // 'ref' (path 1) or 'keyword' (path 2)
 
   // Prepend the previous chunk's trailing edge so references that span
-  // chunk boundaries can still be detected. Update the tail AFTER matching
-  // so the next call sees this chunk's trailing edge too.
-  const matchInput = (_refTailBuffer ? _refTailBuffer + ' ' : '') + text;
+  // chunk boundaries can still be detected. Skip the carry if the previous
+  // chunk is stale (>15s ago) so an old fragment doesn't false-match
+  // against unrelated new speech.
+  const now      = Date.now();
+  const carryOk  = _refTailBuffer && (now - _refTailAt) <= REF_TAIL_TTL_MS;
+  const matchInput = (carryOk ? _refTailBuffer + ' ' : '') + text;
   _refTailBuffer   = text.slice(-REF_TAIL_LEN);
+  _refTailAt       = now;
 
   // Try direct reference match first (e.g. "John 3:16" spoken aloud)
   const ref = detectScriptureRef(matchInput);
