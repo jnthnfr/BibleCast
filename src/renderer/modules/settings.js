@@ -196,6 +196,11 @@ async function loadSettingsView() {
   setSelectVal('setting-whisper-model',    s.whisper_model    || 'Xenova/whisper-small.en');
   setSelectVal('setting-whisper-threads',  s.whisper_threads  || 'auto');
   setCheckbox('setting-whisper-gpu',       s.whisper_gpu === 'true');
+  setCheckbox('setting-semantic',          s.semantic_enabled === 'true');
+  const semThr = parseFloat(s.semantic_threshold);
+  setSlider('setting-semantic-threshold', 'semantic-threshold-val',
+            Number.isFinite(semThr) ? Math.round(semThr * 100) : 45,
+            v => `${v}%`);
   setCheckbox('setting-ai-summary',        s.ai_summary === 'true');
 
   // Populate hardware info
@@ -209,6 +214,12 @@ async function loadSettingsView() {
   if (modelRow) modelRow.style.display = (s.whisper_provider === 'whisper-local') ? 'flex' : 'none';
   const keyRow = document.getElementById('openai-key-row');
   if (keyRow) keyRow.style.display = (s.ai_summary === 'true') ? 'flex' : 'none';
+  // Semantic sub-rows only matter when the feature is on
+  const semOn      = s.semantic_enabled === 'true';
+  const semThrRow  = document.getElementById('semantic-threshold-row');
+  const semStatRow = document.getElementById('semantic-status-row');
+  if (semThrRow)  semThrRow.style.display  = semOn ? 'flex' : 'none';
+  if (semStatRow) semStatRow.style.display = semOn ? 'flex' : 'none';
   setSelectVal('setting-speech-quality',      s.speech_quality);
   setCheckbox('setting-autostart-transcription', s.autostart_transcription === 'true');
   setSlider('setting-debounce',      'setting-debounce-val',      s.debounce_ms || '1500',  v => (v/1000).toFixed(1)+'s');
@@ -279,6 +290,8 @@ async function saveAllSettings() {
     ['whisper_model',           getSelectVal('setting-whisper-model')],
     ['whisper_threads',         getSelectVal('setting-whisper-threads') || 'auto'],
     ['whisper_gpu',             getCheckbox('setting-whisper-gpu')],
+    ['semantic_enabled',        getCheckbox('setting-semantic')],
+    ['semantic_threshold',      ((parseInt(getSliderVal('setting-semantic-threshold'), 10) || 45) / 100).toFixed(2)],
     ['ai_summary',              getCheckbox('setting-ai-summary')],
     ['openai_api_key',          getInputVal('setting-openai-key')],
     ['speech_quality',          getSelectVal('setting-speech-quality')],

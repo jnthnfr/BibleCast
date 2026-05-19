@@ -122,6 +122,22 @@ contextBridge.exposeInMainWorld('biblecast', {
   onWhisperProgress: (callback) =>
     ipcRenderer.on('whisper:progress', (_event, data) => callback(data)),
 
+  // --- Semantic verse retrieval ---
+  warmSemanticIndex: (translation) =>
+    ipcRenderer.invoke('semantic:warm', translation),
+
+  semanticSearch: (opts) =>
+    ipcRenderer.invoke('semantic:search', opts),
+
+  semanticStatus: () =>
+    ipcRenderer.invoke('semantic:status'),
+
+  resetSemantic: () =>
+    ipcRenderer.invoke('semantic:reset'),
+
+  onSemanticProgress: (callback) =>
+    ipcRenderer.on('semantic:progress', (_event, data) => callback(data)),
+
   // --- AI Sermon Summary ---
   summarizeSermon: (transcript, apiKey) =>
     ipcRenderer.invoke('ai:summarize', { transcript, apiKey }),

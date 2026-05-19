@@ -144,6 +144,18 @@ let chromeBridgeServer = null;
 let chromeBridgePort   = 0;
 let chromeProcess      = null;
 
+// Semantic verse retrieval (paraphrase matching). embedPipeline is the
+// feature-extraction model; semanticIndex holds the embedded verse matrix
+// for one translation at a time (rebuilt on translation switch, cached to
+// disk so switching back is instant).
+const EMBED_MODEL      = 'Xenova/all-MiniLM-L6-v2';
+const EMBED_DIM        = 384;
+const EMBED_BATCH      = 64;
+let embedPipeline      = null;
+let embedLoading       = false;
+let semanticIndex      = null;   // { translation, count, refs:[], verses:[], matrix:Float32Array }
+let semanticBuilding   = false;
+
 function getDb() {
   if (!db) {
     try {
@@ -1106,6 +1118,193 @@ function registerWhisperHandlers() {
   });
 }
 
+// ── Semantic verse retrieval ──────────────────────────────────────────────────
+
+async function getEmbedPipeline(progressCb) {
+  if (embedPipeline) return embedPipeline;
+  if (embedLoading)  throw new Error('Embedding model is already loading');
+  embedLoading = true;
+  try {
+    const { pipeline, env } = await import('@xenova/transformers');
+    env.cacheDir = path.join(app.getPath('userData'), 'whisper-models');
+    embedPipeline = await pipeline('feature-extraction', EMBED_MODEL, {
+      progress_callback: p => progressCb && progressCb(p),
+    });
+    return embedPipeline;
+  } finally {
+    embedLoading = false;
+  }
+}
+
+function semanticIndexPaths(translation) {
+  const dir = path.join(app.getPath('userData'), 'semantic-index');
+  const base = path.join(dir, `${translation.toUpperCase()}`);
+  return { dir, meta: `${base}.json`, vec: `${base}.f32` };
+}
+
+// Load a previously-built index from disk if it matches the current verse
+// set (same model + same verse count). Returns the index object or null.
+function loadSemanticIndexFromDisk(translation, verses) {
+  try {
+    const { meta, vec } = semanticIndexPaths(translation);
+    if (!fs.existsSync(meta) || !fs.existsSync(vec)) return null;
+    const m = JSON.parse(fs.readFileSync(meta, 'utf-8'));
+    if (m.model !== EMBED_MODEL || m.dim !== EMBED_DIM) return null;
+    if (m.count !== verses.length) return null; // translation changed under us
+    const buf = fs.readFileSync(vec);
+    const matrix = new Float32Array(buf.buffer, buf.byteOffset, m.count * EMBED_DIM);
+    return {
+      translation: translation.toUpperCase(),
+      count: m.count,
+      refs: m.refs,
+      verses,
+      matrix,
+    };
+  } catch (err) {
+    console.warn('[Semantic] disk load failed:', err.message);
+    return null;
+  }
+}
+
+function saveSemanticIndexToDisk(translation, refs, matrix) {
+  try {
+    const { dir, meta, vec } = semanticIndexPaths(translation);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(meta + '.tmp', JSON.stringify({
+      model: EMBED_MODEL, dim: EMBED_DIM, count: refs.length, refs,
+    }));
+    fs.writeFileSync(vec + '.tmp', Buffer.from(matrix.buffer, matrix.byteOffset, matrix.byteLength));
+    fs.renameSync(meta + '.tmp', meta);
+    fs.renameSync(vec + '.tmp', vec);
+  } catch (err) {
+    console.warn('[Semantic] disk save failed:', err.message);
+  }
+}
+
+// Build (or load) the embedded verse matrix for a translation. Progress is
+// pushed to the operator window as { phase, loaded, total }.
+async function buildSemanticIndex(translation) {
+  if (semanticBuilding) throw new Error('Index build already in progress');
+  if (semanticIndex && semanticIndex.translation === translation.toUpperCase())
+    return semanticIndex;
+
+  semanticBuilding = true;
+  try {
+    const verses = getDb().getTranslationVerses(translation);
+    if (!verses || !verses.length) throw new Error('No verses for translation ' + translation);
+
+    // Load the embedding model up front (downloads ~25 MB on first ever run,
+    // cached on disk after). Doing it here — during "warm" — means the first
+    // semantic query mid-sermon doesn't pay a model-load spike, even when the
+    // verse index itself is restored from disk cache.
+    const pipe = await getEmbedPipeline(p => {
+      safeSend(operatorWindow, 'semantic:progress', { phase: 'model', status: p.status, progress: p.progress });
+    });
+
+    const cached = loadSemanticIndexFromDisk(translation, verses);
+    if (cached) {
+      semanticIndex = cached;
+      safeSend(operatorWindow, 'semantic:progress', { phase: 'done', loaded: cached.count, total: cached.count });
+      return semanticIndex;
+    }
+
+    const count  = verses.length;
+    const refs   = verses.map(v => `${v.book} ${v.chapter}:${v.verse}`);
+    const matrix = new Float32Array(count * EMBED_DIM);
+
+    for (let i = 0; i < count; i += EMBED_BATCH) {
+      const slice = verses.slice(i, i + EMBED_BATCH).map(v => v.text);
+      const out   = await pipe(slice, { pooling: 'mean', normalize: true });
+      matrix.set(out.data, i * EMBED_DIM);
+      safeSend(operatorWindow, 'semantic:progress', {
+        phase: 'indexing', loaded: Math.min(i + EMBED_BATCH, count), total: count,
+      });
+    }
+
+    saveSemanticIndexToDisk(translation, refs, matrix);
+    semanticIndex = { translation: translation.toUpperCase(), count, refs, verses, matrix };
+    safeSend(operatorWindow, 'semantic:progress', { phase: 'done', loaded: count, total: count });
+    return semanticIndex;
+  } finally {
+    semanticBuilding = false;
+  }
+}
+
+// Cosine similarity (vectors are L2-normalized at embed time, so this is a
+// dot product) of the query against every verse; return top-K above minScore.
+async function semanticSearch(queryText, translation, topK, minScore) {
+  if (!semanticIndex || semanticIndex.translation !== translation.toUpperCase()) return [];
+  if (!queryText || !queryText.trim()) return [];
+
+  const pipe = await getEmbedPipeline();
+  const q    = await pipe(queryText, { pooling: 'mean', normalize: true });
+  const qv   = q.data; // Float32Array length EMBED_DIM
+
+  const { matrix, count, verses } = semanticIndex;
+  const best = []; // small max-heap-ish: keep topK by score
+  for (let i = 0; i < count; i++) {
+    const off = i * EMBED_DIM;
+    let dot = 0;
+    for (let d = 0; d < EMBED_DIM; d++) dot += qv[d] * matrix[off + d];
+    if (dot < minScore) continue;
+    if (best.length < topK) {
+      best.push({ i, score: dot });
+      if (best.length === topK) best.sort((a, b) => a.score - b.score);
+    } else if (dot > best[0].score) {
+      best[0] = { i, score: dot };
+      best.sort((a, b) => a.score - b.score);
+    }
+  }
+  return best
+    .sort((a, b) => b.score - a.score)
+    .map(({ i, score }) => {
+      const v = verses[i];
+      return {
+        book: v.book, chapter: v.chapter, verse: v.verse, text: v.text,
+        reference: `${v.book} ${v.chapter}:${v.verse}`,
+        translation: translation.toUpperCase(),
+        score,
+      };
+    });
+}
+
+function registerEmbeddingHandlers() {
+  ipcMain.handle('semantic:warm', async (_e, translation) => {
+    try {
+      const idx = await buildSemanticIndex(translation || 'KJV');
+      return { ok: true, count: idx.count };
+    } catch (err) {
+      safeSend(operatorWindow, 'semantic:progress', { phase: 'error', error: err.message });
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('semantic:search', async (_e, { query, translation, topK, minScore }) => {
+    try {
+      const results = await semanticSearch(
+        query, translation || 'KJV',
+        topK || 5,
+        typeof minScore === 'number' ? minScore : 0.45,
+      );
+      return { ok: true, results };
+    } catch (err) {
+      return { ok: false, error: err.message, results: [] };
+    }
+  });
+
+  ipcMain.handle('semantic:status', () => ({
+    ready:      !!semanticIndex,
+    building:   semanticBuilding,
+    translation: semanticIndex ? semanticIndex.translation : null,
+    count:      semanticIndex ? semanticIndex.count : 0,
+  }));
+
+  ipcMain.handle('semantic:reset', () => {
+    semanticIndex = null;
+    return { ok: true };
+  });
+}
+
 function registerAiHandlers() {
   ipcMain.handle('ai:summarize', async (_event, { transcript, apiKey }) => {
     if (!apiKey || !transcript || transcript.trim().split(/\s+/).length < 30)
@@ -1520,6 +1719,7 @@ function registerIpcHandlers() {
   registerTranslationHandlers();
   registerSettingsHandlers();
   registerWhisperHandlers();
+  registerEmbeddingHandlers();
   registerAiHandlers();
   registerUpdateHandlers();
   registerScraperHandlers();

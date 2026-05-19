@@ -93,6 +93,7 @@ async function init() {
   bindEvents();
   initWhisperProgress();
   initTranscriptClickHandlers();
+  initSemanticEvents();
   initUpdaterEvents();
   await loadMicrophones();
   await loadMonitors();
@@ -521,6 +522,13 @@ function bindEvents() {
     // process and visibly freezing the operator panel mid-sermon).
     const abbr = e.target.value;
     if (abbr) api.warmTranslation?.(abbr).catch(() => {});
+    // The semantic index is per-translation. Drop the old one and rebuild
+    // for the new translation (disk-cached, so a previously-built one loads
+    // back in seconds).
+    if (abbr && settings.semantic_enabled === 'true') {
+      api.resetSemantic?.();
+      warmSemanticIndex(abbr);
+    }
     doSearch();
   });
   document.getElementById('find-btn')?.addEventListener('click', doSearch);
@@ -912,6 +920,76 @@ function bindEvents() {
     api.resetWhisper?.();
     whisperReady = false;
   });
+
+  // Semantic detection toggle: enabling kicks off the one-time index build
+  // for the active translation.
+  document.getElementById('setting-semantic')?.addEventListener('change', e => {
+    settings.semantic_enabled = e.target.checked ? 'true' : 'false';
+    api.saveSetting('semantic_enabled', settings.semantic_enabled);
+    const statusRow = document.getElementById('semantic-status-row');
+    const thrRow    = document.getElementById('semantic-threshold-row');
+    if (thrRow) thrRow.style.display = e.target.checked ? 'flex' : 'none';
+    if (e.target.checked) {
+      if (statusRow) statusRow.style.display = 'flex';
+      warmSemanticIndex(currentTranslationAbbr());
+    } else if (statusRow) {
+      statusRow.style.display = 'none';
+    }
+  });
+}
+
+// ── Semantic index lifecycle ──────────────────────────────────────────────────
+
+function currentTranslationAbbr() {
+  return document.getElementById('translation-select')?.value || 'KJV';
+}
+
+function setSemanticStatus(text) {
+  const row = document.getElementById('semantic-status-row');
+  const el  = document.getElementById('semantic-status-text');
+  if (row) row.style.display = 'flex';
+  if (el)  el.textContent = text;
+}
+
+let _semanticWarming = false;
+async function warmSemanticIndex(abbr) {
+  if (_semanticWarming) return;
+  _semanticWarming = true;
+  setSemanticStatus('Preparing…');
+  try {
+    const res = await api.warmSemanticIndex(abbr || currentTranslationAbbr());
+    if (res && res.ok) setSemanticStatus(`Ready — ${res.count.toLocaleString()} verses (${abbr || currentTranslationAbbr()})`);
+    else setSemanticStatus(`Failed: ${res && res.error ? res.error : 'unknown error'}`);
+  } catch (err) {
+    setSemanticStatus(`Failed: ${err.message}`);
+  } finally {
+    _semanticWarming = false;
+  }
+}
+
+function initSemanticEvents() {
+  api.onSemanticProgress(p => {
+    if (!p) return;
+    if (p.phase === 'model') {
+      const pct = p.progress != null ? ` ${Math.round(p.progress)}%` : '';
+      setSemanticStatus(`Downloading model${pct}…`);
+    } else if (p.phase === 'indexing') {
+      const pct = p.total ? Math.round((p.loaded / p.total) * 100) : 0;
+      setSemanticStatus(`Building index ${pct}% (${p.loaded.toLocaleString()}/${p.total.toLocaleString()})`);
+    } else if (p.phase === 'done') {
+      setSemanticStatus(`Ready — ${p.total.toLocaleString()} verses`);
+    } else if (p.phase === 'error') {
+      setSemanticStatus(`Failed: ${p.error}`);
+    }
+  });
+
+  // Build the index in the background on startup if the operator left
+  // semantic detection enabled from a previous session.
+  if (settings.semantic_enabled === 'true') {
+    const statusRow = document.getElementById('semantic-status-row');
+    if (statusRow) statusRow.style.display = 'flex';
+    warmSemanticIndex(currentTranslationAbbr());
+  }
 }
 
 // ── Update system ─────────────────────────────────────────────────────────────

@@ -279,7 +279,27 @@ async function runPrediction(text) {
     }
   }
 
-  // Path 3: fall back to keyword search if nothing matched.
+  // Path 3: semantic / paraphrase match (opt-in). Runs the rolling window
+  // through the embedded verse index. Like keyword, it never auto-projects
+  // under strict mode (resultSource !== 'ref') — paraphrase matching is the
+  // highest false-positive risk, so it only populates predictions for the
+  // operator to confirm.
+  if (!results.length && settings.semantic_enabled === 'true') {
+    const minScore = parseFloat(settings.semantic_threshold) || 0.45;
+    try {
+      const res = await api.semanticSearch({
+        query: matchInput, translation, topK: 5, minScore,
+      });
+      if (res && res.ok && res.results.length) {
+        results = res.results;
+        resultSource = 'semantic';
+      }
+    } catch (err) {
+      console.warn('[semantic] search failed:', err.message);
+    }
+  }
+
+  // Path 4: fall back to keyword search if nothing matched.
   if (!results.length) {
     const keywords = extractKeywords(text);
     if (keywords.length < getConfidenceThreshold()) return;
