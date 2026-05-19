@@ -48,4 +48,6 @@ let settings = {
   show_reference:         true,
   whisper_provider:       'web-speech',
   auto_project_only_on_exact_ref: true,  // strict mode: auto-project only on path-1 reference matches
+  lt_template:            'accent-card', // lower-third style: accent-card | broadcast-tab | minimal | classic
+  lt_accent_color:        '#e8c97a',     // brand keyline/eyebrow colour for the new templates
 };

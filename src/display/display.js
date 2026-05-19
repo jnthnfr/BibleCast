@@ -49,6 +49,8 @@ async function init() {
     lt_bg_opacity:     settings.lt_bg_opacity,
     lt_bg_gradient_start: settings.lt_bg_gradient_start,
     lt_bg_gradient_end:   settings.lt_bg_gradient_end,
+    lt_template:          settings.lt_template,
+    lt_accent_color:      settings.lt_accent_color,
     standby_type:         settings.standby_type         || 'none',
     standby_image_url:    settings.standby_image_url    || '',
     standby_image_fit:    settings.standby_image_fit    || 'contain',
@@ -117,6 +119,8 @@ function handleUpdate(data) {
       lt_bg_opacity:     data.ltBgOpacity,
       lt_bg_gradient_start: data.ltBgGradientStart,
       lt_bg_gradient_end:   data.ltBgGradientEnd,
+      lt_template:          data.ltTemplate,
+      lt_accent_color:      data.ltAccentColor,
       standby_type:         data.standbyType,
       standby_image_url:    data.standbyImageUrl,
       standby_image_fit:    data.standbyImageFit,
@@ -163,7 +167,9 @@ function autoFitText() {
 
   // ── Phase 1: binary search using scrollHeight (fast, O log n) ──────────────
   const safeMargin = isLowerThird ? 0 : Math.max(24, Math.round(vh * 0.035) + (dpr > 1 ? Math.round(dpr * 4) : 0));
-  const maxH = isLowerThird ? Math.round(vh * 0.28) : vh - safeMargin * 2;
+  // Inset templates are narrower (title-safe), so verses wrap taller — give
+  // the lower third a slightly larger height budget than the old 0.28 bar.
+  const maxH = isLowerThird ? Math.round(vh * 0.32) : vh - safeMargin * 2;
 
   const MIN_PX = 16;
   const MAX_PX = isLowerThird ? 200 : 400;
@@ -271,6 +277,23 @@ function applySettings(s) {
     } else {
       if (standbyImg) standbyImg.src = '';
       document.body.classList.remove('has-standby-image');
+    }
+  }
+
+  // Lower-third template + brand accent
+  if (s.lt_accent_color) {
+    root.style.setProperty('--lt-accent', s.lt_accent_color);
+  }
+  // Always keep exactly one template class so lower-third mode is never
+  // un-styled (fresh installs have no lt_template row yet → default).
+  {
+    const tpl = ['accent-card', 'broadcast-tab', 'minimal', 'classic'].includes(s.lt_template)
+      ? s.lt_template : 'accent-card';
+    if (!document.body.classList.contains('lt-tpl-' + tpl)) {
+      document.body.classList.remove(
+        'lt-tpl-accent-card', 'lt-tpl-broadcast-tab', 'lt-tpl-minimal', 'lt-tpl-classic');
+      document.body.classList.add('lt-tpl-' + tpl);
+      if (document.body.classList.contains('layout-lower-third') && autoFitLtEnabled) autoFitText();
     }
   }
 

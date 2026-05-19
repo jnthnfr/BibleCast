@@ -603,6 +603,22 @@ function bindEvents() {
   document.getElementById('setting-bg-grad-start')?.addEventListener('input', liveDisplaySettings);
   document.getElementById('setting-bg-grad-end')?.addEventListener('input', liveDisplaySettings);
   document.getElementById('setting-bg-image-url')?.addEventListener('change', liveDisplaySettings);
+
+  // Lower-third template / accent: update the in-memory settings and the
+  // operator preview immediately (so the operator sees the switch), then
+  // debounce-save (which broadcasts to the live display/NDI windows).
+  const refreshLtPreview = () => {
+    const tplEl = document.getElementById('setting-lt-template');
+    const accEl = document.getElementById('setting-lt-accent-color');
+    if (tplEl) settings.lt_template     = tplEl.value;
+    if (accEl) settings.lt_accent_color = accEl.value;
+    updateStudioPreview(selectedVerse);
+    updateLivePreview(selectedVerse, isBlank);
+    syncDisplayPreviewLarge(selectedVerse);
+    liveDisplaySettings();
+  };
+  document.getElementById('setting-lt-template')?.addEventListener('change', refreshLtPreview);
+  document.getElementById('setting-lt-accent-color')?.addEventListener('input', refreshLtPreview);
   document.getElementById('setting-ref-color')?.addEventListener('input', liveDisplaySettings);
   document.getElementById('reset-ref-color-btn')?.addEventListener('click', () => {
     const el = document.getElementById('setting-ref-color');
