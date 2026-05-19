@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "node scripts/launch.js",
+    "test": "node --test test/*.test.js",
     "dev": "cross-env NODE_ENV=development node scripts/launch.js",
     "seed": "node scripts/seed-db.js",
     "download": "node scripts/download-translations.js",
