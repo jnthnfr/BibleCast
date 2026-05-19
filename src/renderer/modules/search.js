@@ -32,9 +32,12 @@ function normalizeSpokenScripture(text) {
   // Remove filler words common in spoken references
   norm = norm.replace(/\b(?:chapter|verse|verses)\b/g, ' ');
 
-  // Replace common homophones for numbers
-  norm = norm.replace(/\b(?:to|too|two)\b/g, '2');
-  norm = norm.replace(/\b(?:for|four)\b/g, '4');
+  // Replace common homophones for numbers. NOTE: "to" is deliberately
+  // excluded — it is overwhelmingly the preposition ("turn TO John"), and
+  // mapping it to 2 corrupted the book token into the "2 John" epistle.
+  // "too"/"two" are kept (genuine homophones of the number two).
+  norm = norm.replace(/\b(?:too|two)\b/g, '2');
+  norm = norm.replace(/\bfour\b/g, '4');
   norm = norm.replace(/\bate\b/g, '8');
 
   // Replace textual numbers with digits
@@ -57,10 +60,120 @@ function normalizeSpokenScripture(text) {
   return norm.replace(/\s+/g, ' ').trim();
 }
 
-function detectScriptureRef(text) {
+// Parse a spoken/typed reference into its parts so callers can both search
+// for it and remember it as context for later bare-verse references.
+// Returns { ref, book, chapter, verse } or null. `book` is the spoken token
+// as normalized (e.g. "john", "first corinthians") — api.searchVerses
+// already accepts that form, so no canonical-name mapping is needed.
+function parseScriptureRef(text) {
   const normalized = normalizeSpokenScripture(text);
   const m = normalized.match(SCRIPTURE_REF_RE);
-  return m ? m[0].trim() : null;
+  if (!m) return null;
+  const ref     = m[0].trim();
+  const chapter = m[1] ? parseInt(m[1], 10) : null;
+  const verse   = m[2] ? parseInt(m[2], 10) : null;
+  // book = full match minus the trailing "<chapter>[: ]<verse>" tail.
+  const book = ref.replace(/\s+\d+(?:[: ]\d+)?$/, '').trim();
+  return { ref, book, chapter, verse };
+}
+
+function detectScriptureRef(text) {
+  const p = parseScriptureRef(text);
+  return p ? p.ref : null;
+}
+
+// ── Contextual references ─────────────────────────────────────────────────────
+//
+// Preachers rarely re-state the book: they say "John chapter three" once, then
+// "verse sixteen", "the next verse", "verses nine through eleven". This tracks
+// the last explicit reference and resolves bare-verse cues against it — the
+// "contextual" detection type both PewBeam and Loghema advertise.
+//
+// Two time windows guard against stale context bleeding across topics:
+//   CONTEXT_TTL_MS           how long context stays usable for SUGGESTIONS
+//   CONTEXT_AUTOPROJECT_MS   tighter window in which a contextual hit may
+//                            also auto-project (strict mode) rather than
+//                            only populate the predictions list
+let _ctxBook     = null;   // normalized spoken token, e.g. "john"
+let _ctxChapter  = null;   // number
+let _ctxVerse    = null;   // number — last resolved verse (drives "next verse")
+let _ctxAt       = 0;      // timestamp of last context update
+const CONTEXT_TTL_MS         = 180000; // 3 min
+const CONTEXT_AUTOPROJECT_MS = 45000;  // 45 s
+
+function resetScriptureContext() {
+  _ctxBook = null; _ctxChapter = null; _ctxVerse = null; _ctxAt = 0;
+}
+
+function rememberScriptureContext(parsed) {
+  if (!parsed || !parsed.book || parsed.chapter == null) return;
+  _ctxBook    = parsed.book;
+  _ctxChapter = parsed.chapter;
+  _ctxVerse   = parsed.verse;   // may be null for a chapter-only reference
+  _ctxAt      = Date.now();
+}
+
+// Convert spoken number words to digits WITHOUT stripping the cue words
+// ("verse", "next", "to", "through") that normalizeSpokenScripture removes.
+// Range words (to/through/thru) are intentionally preserved.
+function normalizeNumberWords(text) {
+  let s = text.toLowerCase();
+  const numWords = {
+    zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8,
+    nine:9, ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14,
+    fifteen:15, sixteen:16, seventeen:17, eighteen:18, nineteen:19,
+    twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70,
+    eighty:80, ninety:90, hundred:100,
+  };
+  for (const [w, d] of Object.entries(numWords)) {
+    s = s.replace(new RegExp(`\\b${w}\\b`, 'g'), d);
+  }
+  s = s.replace(/\b(20|30|40|50|60|70|80|90)\s+([1-9])\b/g, (_, t, o) => parseInt(t) + parseInt(o));
+  s = s.replace(/\b(100)\s+([1-9]\d?)\b/g, (_, h, r) => parseInt(h) + parseInt(r));
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+// Resolve a bare-verse cue against remembered context. Returns
+// { ref, verse, fresh } or null. Only fires on an explicit cue word so a
+// stray number in normal speech ("I have 3 points") can't trigger it.
+function resolveContextualRef(text) {
+  if (!_ctxBook || _ctxChapter == null) return null;
+  const age = Date.now() - _ctxAt;
+  if (age > CONTEXT_TTL_MS) return null;
+
+  const s = normalizeNumberWords(text);
+
+  // A bare "chapter N" (no book) re-points the chapter for later verses but
+  // is too ambiguous to project on its own.
+  const chap = s.match(/\bchapter\s+(\d{1,3})\b/);
+  if (chap) {
+    _ctxChapter = parseInt(chap[1], 10);
+    _ctxVerse   = null;
+    _ctxAt      = Date.now();
+  }
+
+  let verse = null;
+  if (/\b(?:the\s+)?(?:next|following)\s+verse\b/.test(s)) {
+    if (_ctxVerse == null) return null;
+    verse = _ctxVerse + 1;
+  } else if (/\b(?:the\s+)?(?:previous|preceding|last)\s+verse\b/.test(s)) {
+    if (_ctxVerse == null || _ctxVerse <= 1) return null;
+    verse = _ctxVerse - 1;
+  } else {
+    // "verse 16", "verses 9 through 11", "verses 4 to 7" → take the start.
+    const m = s.match(/\bverses?\s+(\d{1,3})(?:\s*(?:-|–|to|through|thru)\s*(\d{1,3}))?\b/);
+    if (m) verse = parseInt(m[1], 10);
+  }
+
+  if (verse == null || verse < 1) return null;
+
+  _ctxVerse = verse;
+  _ctxAt    = Date.now();
+  return {
+    ref:   `${_ctxBook} ${_ctxChapter} ${verse}`,
+    verse,
+    fresh: age <= CONTEXT_AUTOPROJECT_MS,
+  };
 }
 
 // ── Search autocomplete ───────────────────────────────────────────────────────
@@ -119,6 +232,7 @@ const REF_TAIL_TTL_MS  = 15000;
 function resetRefTailBuffer() {
   _refTailBuffer = '';
   _refTailAt     = 0;
+  resetScriptureContext();
 }
 
 function schedulePrediction(text) {
@@ -130,7 +244,7 @@ function schedulePrediction(text) {
 async function runPrediction(text) {
   const translation = document.getElementById('translation-select')?.value || 'KJV';
   let results = [];
-  let resultSource = null; // 'ref' (path 1) or 'keyword' (path 2)
+  let resultSource = null; // 'ref' | 'context' | 'keyword'
 
   // Prepend the previous chunk's trailing edge so references that span
   // chunk boundaries can still be detected. Skip the carry if the previous
@@ -142,14 +256,30 @@ async function runPrediction(text) {
   _refTailBuffer   = text.slice(-REF_TAIL_LEN);
   _refTailAt       = now;
 
-  // Try direct reference match first (e.g. "John 3:16" spoken aloud)
-  const ref = detectScriptureRef(matchInput);
-  if (ref) {
-    results = await api.searchVerses(ref, translation);
-    if (results.length) resultSource = 'ref';
+  // Path 1: explicit reference (e.g. "John 3:16" spoken aloud). Remember it
+  // as context so later bare-verse cues ("verse 18", "the next verse")
+  // resolve against it.
+  const parsed = parseScriptureRef(matchInput);
+  if (parsed) {
+    results = await api.searchVerses(parsed.ref, translation);
+    if (results.length) {
+      resultSource = 'ref';
+      rememberScriptureContext(parsed);
+    }
   }
 
-  // Fall back to keyword search if no reference found or no results
+  // Path 2: contextual reference resolved against the last explicit one.
+  // Auto-projects only inside the fresh window; otherwise it just populates
+  // the predictions list so the operator can confirm with a click.
+  if (!results.length) {
+    const ctx = resolveContextualRef(matchInput);
+    if (ctx) {
+      results = await api.searchVerses(ctx.ref, translation);
+      if (results.length) resultSource = ctx.fresh ? 'ref' : 'context';
+    }
+  }
+
+  // Path 3: fall back to keyword search if nothing matched.
   if (!results.length) {
     const keywords = extractKeywords(text);
     if (keywords.length < getConfidenceThreshold()) return;
