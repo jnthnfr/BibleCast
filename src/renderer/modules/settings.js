@@ -88,6 +88,11 @@ async function loadAllSettings() {
   const ltAutofitEl = document.getElementById('setting-lt-autofit-text');
   if (ltAutofitEl) ltAutofitEl.checked = s.lt_auto_fit_text !== 'false'; // default true
 
+  const ltTemplateEl = document.getElementById('setting-lt-template');
+  if (ltTemplateEl) ltTemplateEl.value = s.lt_template || 'accent-card';
+  const ltAccentEl = document.getElementById('setting-lt-accent-color');
+  if (ltAccentEl) ltAccentEl.value = s.lt_accent_color || '#e8c97a';
+
   // Lower-third bar background
   if (s.lt_bg_type) setActiveSegBtn('lt-bg-type', s.lt_bg_type);
   const ltBgColorEl = document.getElementById('setting-lt-bg-color');
@@ -339,6 +344,8 @@ async function saveDisplaySettings() {
   const refSizePct = parseInt(document.getElementById('setting-ref-size')?.value) || 45;
 
   const ltAutoFit     = document.getElementById('setting-lt-autofit-text')?.checked !== false;
+  const ltTemplate    = document.getElementById('setting-lt-template')?.value      || 'accent-card';
+  const ltAccentColor = document.getElementById('setting-lt-accent-color')?.value  || '#e8c97a';
   const ltBgType      = document.querySelector('#lt-bg-type .seg-btn.active')?.dataset.val || 'solid';
   const ltBgColor     = document.getElementById('setting-lt-bg-color')?.value     || '#000000';
   const ltBgOpacity   = (parseInt(document.getElementById('setting-lt-bg-opacity')?.value ?? 82) / 100).toFixed(2);
@@ -362,6 +369,8 @@ async function saveDisplaySettings() {
     refColor   && api.saveSetting('ref_color',        refColor),
     api.saveSetting('ref_size_ratio',     (refSizePct / 100).toFixed(2)),
     api.saveSetting('lt_auto_fit_text',   ltAutoFit.toString()),
+    api.saveSetting('lt_template',        ltTemplate),
+    api.saveSetting('lt_accent_color',    ltAccentColor),
     api.saveSetting('lt_bg_type',         ltBgType),
     api.saveSetting('lt_bg_color',        ltBgColor),
     api.saveSetting('lt_bg_opacity',      ltBgOpacity),

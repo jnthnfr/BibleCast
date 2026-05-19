@@ -390,6 +390,19 @@
               Lower Third
             </div>
 
+            <div class="rs-field-lbl" style="margin-top:10px">TEMPLATE</div>
+            <select id="setting-lt-template" class="rs-dropdown">
+              <option value="accent-card">Accent Card — inset card + brand stripe</option>
+              <option value="broadcast-tab">Broadcast Tab — reference tab + panel</option>
+              <option value="minimal">Minimal Key — text only, over video</option>
+              <option value="classic">Classic Bar — edge-to-edge</option>
+            </select>
+
+            <div id="lt-accent-row" style="display:flex;align-items:center;gap:8px;margin-top:8px">
+              <input type="color" id="setting-lt-accent-color" value="#e8c97a" class="color-swatch" title="Accent / brand colour" />
+              <div style="font-size:0.72rem;color:var(--text-muted)">Accent colour (stripe / eyebrow / rule)</div>
+            </div>
+
             <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;margin-bottom:4px">
               <div>
                 <div class="rs-field-lbl" style="margin:0">AUTO-FIT TEXT</div>
@@ -401,7 +414,7 @@
               </label>
             </div>
 
-            <div class="rs-field-lbl" style="margin-top:10px">BAR BACKGROUND</div>
+            <div class="rs-field-lbl" style="margin-top:10px">BACKGROUND <span style="font-weight:400;color:var(--text-muted)">(card / bar / panel)</span></div>
             <div class="seg-btns" id="lt-bg-type">
               <button class="seg-btn active" data-val="solid">Solid</button>
               <button class="seg-btn" data-val="gradient">Gradient</button>

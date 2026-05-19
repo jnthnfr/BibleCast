@@ -15,7 +15,25 @@
 
   /* Lower-third bar background (independent of fullscreen bg) */
   --lt-container-bg: rgba(0, 0, 0, 0.82);
+  /* Lower-third brand accent (stripe / eyebrow / tab / rule) */
+  --lt-accent: #e8c97a;
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * LOWER-THIRD TEMPLATE GEOMETRY  (keep in sync with projection-preview.js)
+ *
+ *   side inset   : 6%  of viewport width   (accent-card / broadcast-tab / minimal)
+ *   bottom inset : 8%  of viewport height
+ *   inner pad    : 2.2% of viewport width
+ *   accent stripe: 0.6% of viewport width
+ *   card radius  : 14px
+ *   autofit cap  : 32% of viewport height  (display.js MAX height target)
+ *   text scales  : verse .62 · reference .28 · translation .22 of --font-size
+ *
+ * projection-preview.js renders the same templates inline against a
+ * 1920×1080 surface; the percentages there resolve to the same pixels
+ * because the whole surface is CSS-transform scaled to the canvas.
+ * ─────────────────────────────────────────────────────────────────────────── */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -119,19 +137,13 @@ body.theme-blue {
 body.blanked .blank-screen  { display: block; }
 body.blanked .verse-container { visibility: hidden; }
 
-/* ── Lower-third layout ── */
+/* ── Lower-third: shared base ── */
 body.layout-lower-third {
   align-items: flex-end;
+  justify-content: flex-start;
 }
 body.layout-lower-third .verse-container {
-  width: 100%;
-  max-width: 100%;
-  padding: 24px 80px 48px;
-  background: var(--lt-container-bg);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   text-align: left;
-  border-top: 3px solid rgba(255, 255, 255, 0.15);
   animation: slideUp var(--transition) ease;
 }
 body.layout-lower-third .verse-text {
@@ -149,6 +161,145 @@ body.layout-lower-third .translation-badge {
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(20px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ltStripeGrow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+/* ── Template: Classic Bar (refined edge-to-edge) ──────────────────────────── */
+body.layout-lower-third.lt-tpl-classic .verse-container {
+  width: 100%;
+  max-width: 100%;
+  padding: 24px 80px 48px;
+  background: var(--lt-container-bg);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-top: 3px solid var(--lt-accent);
+}
+body.layout-lower-third.lt-tpl-classic .verse-reference { color: var(--lt-accent); }
+
+/* ── Templates that use the title-safe inset (card / tab / minimal) ────────── */
+body.layout-lower-third.lt-tpl-accent-card,
+body.layout-lower-third.lt-tpl-broadcast-tab,
+body.layout-lower-third.lt-tpl-minimal {
+  padding: 0 6vw 8vh;
+}
+body.layout-lower-third.lt-tpl-accent-card  .verse-container,
+body.layout-lower-third.lt-tpl-broadcast-tab .verse-container,
+body.layout-lower-third.lt-tpl-minimal      .verse-container {
+  width: 100%;
+  max-width: 100%;
+  /* Eyebrow row [reference · translation] then full-width verse text,
+     achieved via flex ordering — DOM stays the shared 3-node structure. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0;
+  row-gap: 0.9vh;
+}
+body.layout-lower-third.lt-tpl-accent-card  .verse-reference,
+body.layout-lower-third.lt-tpl-broadcast-tab .verse-reference,
+body.layout-lower-third.lt-tpl-minimal      .verse-reference { order: 1; margin-bottom: 0; }
+body.layout-lower-third.lt-tpl-accent-card  .translation-badge,
+body.layout-lower-third.lt-tpl-broadcast-tab .translation-badge,
+body.layout-lower-third.lt-tpl-minimal      .translation-badge { order: 2; margin-top: 0; }
+body.layout-lower-third.lt-tpl-accent-card  .verse-text,
+body.layout-lower-third.lt-tpl-broadcast-tab .verse-text,
+body.layout-lower-third.lt-tpl-minimal      .verse-text { order: 3; flex: 0 0 100%; }
+
+/* ── Template: Accent Card ─────────────────────────────────────────────────── */
+body.layout-lower-third.lt-tpl-accent-card .verse-container {
+  position: relative;
+  background: var(--lt-container-bg);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 14px;
+  padding: 2.2vw 2.2vw 2.2vw 3.6vw;
+  overflow: hidden;
+}
+body.layout-lower-third.lt-tpl-accent-card .verse-container::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 0.6vw;
+  background: var(--lt-accent);
+  transform-origin: bottom;
+  animation: ltStripeGrow var(--transition) ease;
+}
+body.layout-lower-third.lt-tpl-accent-card .verse-reference {
+  color: var(--lt-accent);
+}
+body.layout-lower-third.lt-tpl-accent-card .translation-badge::before {
+  content: '·';
+  margin: 0 0.5em;
+  color: var(--lt-accent);
+}
+
+/* ── Template: Broadcast Tab ───────────────────────────────────────────────── */
+body.layout-lower-third.lt-tpl-broadcast-tab .verse-container {
+  row-gap: 0; /* tab sits flush on the panel */
+}
+body.layout-lower-third.lt-tpl-broadcast-tab .verse-reference {
+  background: var(--lt-accent);
+  color: #000;
+  padding: 0.5vh 0.6vw 0.5vh 1vw;
+  border-radius: 6px 0 0 0;
+}
+body.layout-lower-third.lt-tpl-broadcast-tab .translation-badge {
+  background: var(--lt-accent);
+  color: #000;
+  padding: 0.5vh 1vw 0.5vh 0;
+  border-radius: 0 6px 0 0;
+}
+body.layout-lower-third.lt-tpl-broadcast-tab .translation-badge::before {
+  content: '·';
+  margin: 0 0.5em;
+  opacity: 0.6;
+}
+body.layout-lower-third.lt-tpl-broadcast-tab .verse-text {
+  background: var(--lt-container-bg);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 2vh 2vw;
+  border-radius: 0 8px 8px 8px;
+}
+
+/* ── Template: Minimal Key (no box; legible over live video) ────────────────── */
+body.layout-lower-third.lt-tpl-minimal .verse-container {
+  background: none;
+  padding: 0;
+  max-width: 62%;
+}
+body.layout-lower-third.lt-tpl-minimal .verse-text {
+  order: 1;
+  text-shadow: 0 2px 14px rgba(0,0,0,0.85), 0 0 4px rgba(0,0,0,0.6);
+  margin-bottom: 1.6vh;
+}
+/* One continuous accent rule on its own row (a single pseudo-element —
+   per-item borders on the differently-sized ref/badge rendered broken). */
+body.layout-lower-third.lt-tpl-minimal .verse-container::before {
+  content: '';
+  order: 2;
+  flex: 0 0 100%;
+  height: 4px;
+  background: var(--lt-accent);
+  margin-bottom: 1.2vh;
+}
+body.layout-lower-third.lt-tpl-minimal .verse-reference {
+  order: 3;
+  color: var(--lt-accent);
+  text-shadow: 0 2px 10px rgba(0,0,0,0.85);
+}
+body.layout-lower-third.lt-tpl-minimal .translation-badge {
+  order: 4;
+  color: var(--lt-accent);
+  text-shadow: 0 2px 10px rgba(0,0,0,0.85);
+}
+body.layout-lower-third.lt-tpl-minimal .translation-badge::before {
+  content: '·';
+  margin: 0 0.5em;
+  color: var(--lt-accent);
 }
 
 /* ── Standby / idle screen ── */

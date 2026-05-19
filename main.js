@@ -653,6 +653,8 @@ function registerSettingsHandlers() {
       'bg_type','bg_color','bg_gradient_start','bg_gradient_end','bg_image_url',
       'font_family','custom_font_family','auto_fit_text','ref_color','ref_size_ratio',
       'standby_type','standby_image_url','standby_image_fit','standby_image_opacity',
+      'lt_auto_fit_text','lt_bg_type','lt_bg_color','lt_bg_opacity',
+      'lt_bg_gradient_start','lt_bg_gradient_end','lt_template','lt_accent_color',
     ];
     if (displayKeys.includes(key)) {
       const s = getDb().getAllSettings();
@@ -680,6 +682,8 @@ function registerSettingsHandlers() {
         ltBgOpacity:      s.lt_bg_opacity      || '0.82',
         ltBgGradientStart: s.lt_bg_gradient_start || '#000000',
         ltBgGradientEnd:   s.lt_bg_gradient_end   || '#1a1a1a',
+        ltTemplate:        s.lt_template          || 'accent-card',
+        ltAccentColor:     s.lt_accent_color      || '#e8c97a',
         standbyType:         s.standby_type          || 'none',
         standbyImageUrl:     s.standby_image_url     || '',
         standbyImageFit:     s.standby_image_fit     || 'contain',
