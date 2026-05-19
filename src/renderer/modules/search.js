@@ -307,6 +307,14 @@ async function runPrediction(text) {
     if (results.length) resultSource = 'keyword';
   }
 
+  // The rolling tail buffer exists only to bridge a reference split across a
+  // chunk boundary. Once any path produces a result the carried speech is
+  // spent — retaining it would let a completed reference re-fire on the next
+  // chunk and block contextual progression ("John 3:16" then "verse 18" must
+  // advance to 3:18, not re-match the carried 3:16). Keep the tail only when
+  // this chunk found nothing, i.e. it may be the front half of a split.
+  if (results.length) { _refTailBuffer = ''; _refTailAt = 0; }
+
   showPredictions(results.slice(0, 5));
 
   // Auto-project if enabled
