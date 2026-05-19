@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches-ignore:
+      - 'gh-pages'
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No `npm ci`: the syntax check is parse-only and the test suite is
+      # dependency-free (node:test + vm). This keeps CI fast and avoids the
+      # native better-sqlite3 rebuild, which isn't needed to validate the
+      # detection pipeline.
+      - name: Syntax check (node --check)
+        run: |
+          set -e
+          FILES=$(find main.js preload.js src test scripts -name '*.js' 2>/dev/null)
+          echo "$FILES" | xargs -I{} -P4 node --check {}
+          echo "All files parsed OK"
+
+      - name: Detection test suite
+        run: npm test
