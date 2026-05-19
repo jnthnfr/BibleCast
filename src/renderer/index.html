@@ -674,6 +674,34 @@
               </div>
             </div>
 
+            <div class="setting-section-hdr" style="margin-top:14px">Semantic Detection</div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <div class="setting-name">Semantic verse detection (AI)</div>
+                <div class="setting-desc">Catches paraphrased scripture — "God will never leave us" surfaces the matching verse even with no reference spoken. Downloads a ~25 MB model once, then builds a one-time index for the active translation (~1–3 min on CPU, cached after). Suggestions only; never auto-projects.</div>
+              </div>
+              <label class="toggle-wrap">
+                <input type="checkbox" id="setting-semantic">
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+            <div class="setting-row" id="semantic-threshold-row">
+              <div class="setting-info">
+                <div class="setting-name">Match sensitivity</div>
+                <div class="setting-desc">Minimum similarity for a paraphrase to surface. Lower = more suggestions (looser), higher = only strong matches.</div>
+              </div>
+              <div class="slider-wrap">
+                <input type="range" id="setting-semantic-threshold" min="25" max="80" step="1" value="45">
+                <span id="semantic-threshold-val" class="slider-val">45%</span>
+              </div>
+            </div>
+            <div class="setting-row" id="semantic-status-row" style="display:none">
+              <div class="setting-info">
+                <div class="setting-name">Index status</div>
+                <div class="setting-desc" id="semantic-status-text" style="font-family:monospace;font-size:0.78rem;color:var(--text-muted)">—</div>
+              </div>
+            </div>
+
             <div class="setting-row">
               <div class="setting-info">
                 <div class="setting-name">AI sermon summary</div>

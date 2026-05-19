@@ -47,4 +47,6 @@ let settings = {
   show_reference:         true,
   whisper_provider:       'chrome-bridge',
   auto_project_only_on_exact_ref: true,  // strict mode: auto-project only on path-1 reference matches
+  semantic_enabled:       'false',       // opt-in: downloads ~25 MB model + builds verse index
+  semantic_threshold:     '0.45',        // min cosine similarity for a semantic match
 };
